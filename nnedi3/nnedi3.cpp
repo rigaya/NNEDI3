@@ -138,7 +138,7 @@ static ThreadPoolInterface *poolInterface;
 // common‚Ìcpp‚ðŽæ‚è“ü‚ê‚é
 #include "DebugWriter.cpp"
 
-static int GetDeviceType(const PClip& clip)
+static int GetDeviceTypes(const PClip& clip)
 {
   int devtypes = (clip->GetVersion() >= 5) ? clip->SetCacheHints(CACHE_GET_DEV_TYPE, 0) : 0;
   if (devtypes == 0) {
@@ -1099,7 +1099,7 @@ int __stdcall nnedi3::SetCacheHints(int cachehints,int frame_range)
   case CACHE_GET_MTMODE :
     return MT_MULTI_INSTANCE;
   case CACHE_GET_DEV_TYPE:
-    return GetDeviceType(child) & (DEV_TYPE_CPU | DEV_TYPE_CUDA);
+    return GetDeviceTypes(child) & (DEV_TYPE_CPU | DEV_TYPE_CUDA);
   default :
     return 0;
   }
