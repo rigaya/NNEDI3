@@ -184,7 +184,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 	GenericVideoFilter(_child),field(_field),dh(_dh),Y(_Y),U(_U),V(_V),A(_A),nsize(_nsize),nns(_nns),qual(_qual),
 	etype(_etype),pscrn(_pscrn),threads(_threads),opt(_opt),fapprox(_fapprox),sleep(_sleep),avsp(_avsp)
 {
-  IScriptEnvironment2* env = static_cast<IScriptEnvironment2*>(env_);
+  PNeoEnv env = env_;
 
 	if ((field<-2) || (field>3))
 	{
@@ -1144,7 +1144,7 @@ void evalFunc_2_32(void *ps);
 
 PVideoFrame __stdcall nnedi3::GetFrame(int n, IScriptEnvironment *env_)
 {
-  IScriptEnvironment2* env = static_cast<IScriptEnvironment2*>(env_);
+  PNeoEnv env = env_;
 	int field_n;
 
 	if (field>1)
@@ -1154,7 +1154,7 @@ PVideoFrame __stdcall nnedi3::GetFrame(int n, IScriptEnvironment *env_)
 	}
 	else field_n = field;
 
-  if (env->GetProperty(AEP_DEVICE_TYPE) == DEV_TYPE_CUDA) {
+  if (env->GetDeviceType() == DEV_TYPE_CUDA) {
     return GetFrameCUDA(field>1 ? (n >> 1) : n, field_n, env);
   }
 
@@ -1181,7 +1181,7 @@ PVideoFrame __stdcall nnedi3::GetFrame(int n, IScriptEnvironment *env_)
 	for (uint8_t i=0; i<PlaneMax; i++)
 		memset(lcount[i],0,dstPF->GetHeight(i)*sizeof(int));
 
-	PVideoFrame dst = env->NewVideoFrame(vi,64);
+	PVideoFrame dst = env->NewVideoFrame(vi);
 
 	uint8_t f_proc_1=0,f_proc_2=0;
 
@@ -1545,7 +1545,7 @@ void nnedi3::calcStartEnd2(PVideoFrame dst)
 }
 
 
-PVideoFrame nnedi3::GetFrameCUDA(int n, int fn, IScriptEnvironment2 *env)
+PVideoFrame nnedi3::GetFrameCUDA(int n, int fn, PNeoEnv env)
 {
   const int off = 1 - fn;
   PVideoFrame src = child->GetFrame(n, env);

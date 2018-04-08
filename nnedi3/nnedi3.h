@@ -17,6 +17,7 @@
 **   along with this program; if not, write to the Free Software
 **   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
+#include "avisynth.h"
 
 #include <windows.h>
 #define _USE_MATH_DEFINES
@@ -27,7 +28,6 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <memory>
-#include "avisynth.h"
 #include "PlanarFrame.h"
 #include "ThreadPoolInterface.h"
 #include "DeviceLocalData.h"
@@ -102,7 +102,7 @@ protected:
 
 	void FreeData(void);
 
-  PVideoFrame GetFrameCUDA(int n, int fn, IScriptEnvironment2 *env);
+  PVideoFrame GetFrameCUDA(int n, int fn, PNeoEnv env);
 
 public:
 	nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,int _nsize,int _nns,int _qual,int _etype,

@@ -1,7 +1,8 @@
 #define _CRT_SECURE_NO_WARNINGS
+#include "avisynth.h"
+
 #define NOMINMAX
 #include <windows.h>
-#include "avisynth.h"
 
 #include <stdio.h>
 
@@ -450,7 +451,7 @@ void GetWorkBytes(int width, int height, int& nnBytes, int& blockBytes) {
   blockBytes = blocks * sizeof(int);
 }
 
-void CopyPadCUDA(int pixelsize, pixel_t* ref, int refpitch, const pixel_t* src, int srcpitch, int width, int height, IScriptEnvironment2* env)
+void CopyPadCUDA(int pixelsize, pixel_t* ref, int refpitch, const pixel_t* src, int srcpitch, int width, int height, PNeoEnv env)
 {
   typedef typename VectorType<pixel_t>::type vpixel_t;
   cudaStream_t stream = static_cast<cudaStream_t>(env->GetDeviceStream());
@@ -474,7 +475,7 @@ void CopyPadCUDA(int pixelsize, pixel_t* ref, int refpitch, const pixel_t* src, 
   }
 }
 
-void BitBltCUDA(pixel_t* dst, int dstpitch, const pixel_t* src, int srcpitch, int width, int height, IScriptEnvironment2* env)
+void BitBltCUDA(pixel_t* dst, int dstpitch, const pixel_t* src, int srcpitch, int width, int height, PNeoEnv env)
 {
   typedef typename VectorType<pixel_t>::type vpixel_t;
   cudaStream_t stream = static_cast<cudaStream_t>(env->GetDeviceStream());
@@ -491,7 +492,7 @@ public:
   typedef void(*F)(
     dim3 preblock,
     pixel_t* dst, int dstpitch, const pixel_t* ref, int refpitch, uchar2* workNN, int* workBlock,
-    const int16_t* weights1, int weights1pitch, int val_min, int val_max, IScriptEnvironment2* env);
+    const int16_t* weights1, int weights1pitch, int val_min, int val_max, PNeoEnv env);
 
   static F Get(int qual, int nns, int xdia, int ydia) {
     switch (qual) {
@@ -506,7 +507,7 @@ private:
   static void Launch(
     dim3 preblock,
     pixel_t* dst, int dstpitch, const pixel_t* ref, int refpitch, uchar2* workNN, int* workBlock,
-    const int16_t* weights1, int weights1pitch, int val_min, int val_max, IScriptEnvironment2* env)
+    const int16_t* weights1, int weights1pitch, int val_min, int val_max, PNeoEnv env)
   {
     cudaStream_t stream = static_cast<cudaStream_t>(env->GetDeviceStream());
 
@@ -560,7 +561,7 @@ void EvalCUDA(int pixelsize, int bits_per_pixel,
   pixel_t* dst, int dstpitch, const pixel_t* ref, int refpitch, int width, int height,
   const int16_t* weights0, const int16_t* weights1, int weights1pitch, 
   uint8_t* workNN_, uint8_t* workBlock_,
-  int range_mode, int qual, int nns, int xdia, int ydia, IScriptEnvironment2* env)
+  int range_mode, int qual, int nns, int xdia, int ydia, PNeoEnv env)
 {
   typedef typename VectorType<pixel_t>::type vpixel_t;
 
