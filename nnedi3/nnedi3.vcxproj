@@ -39,34 +39,34 @@
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>nnedi3</RootNamespace>
     <ProjectName>KNNEDI3</ProjectName>
-    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <CharacterSet>MultiByte</CharacterSet>
-    <PlatformToolset>v140</PlatformToolset>
+    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <CharacterSet>MultiByte</CharacterSet>
-    <PlatformToolset>v140</PlatformToolset>
+    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
-    <PlatformToolset>v140</PlatformToolset>
+    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
-    <PlatformToolset>v140</PlatformToolset>
+    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release_Intel_SSE4.2|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
@@ -93,25 +93,22 @@
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="..\..\cudaver.props" />
+  <Import Project="..\..\Common.props" />
   <ImportGroup Label="ExtensionSettings">
     <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 8.0.props" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\..\Common.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\..\Common.props" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\..\Common.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\..\Common.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release_Intel_SSE4.2|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -161,6 +158,8 @@
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>WIN32;ENABLE_CUDA;_DEBUG;_WINDOWS;_USRDLL;NNEDI3_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -172,8 +171,8 @@
       <GenerateDebugInformation>false</GenerateDebugInformation>
     </MASM>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" %(AdditionalOptions)</AdditionalOptions>
-      <CodeGeneration>compute_61,sm_61;compute_35,sm_35</CodeGeneration>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
+      <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -183,6 +182,8 @@
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>WIN32;ENABLE_CUDA;_DEBUG;_WINDOWS;_USRDLL;NNEDI3_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -191,9 +192,10 @@
       <AdditionalDependencies>cudart.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" %(AdditionalOptions)</AdditionalOptions>
-      <CodeGeneration>compute_61,sm_61;compute_35,sm_35</CodeGeneration>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
       <GenerateLineInfo>true</GenerateLineInfo>
+      <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
+      <TargetMachinePlatform>64</TargetMachinePlatform>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -206,7 +208,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;ENABLE_CUDA;NDEBUG;_WINDOWS;_USRDLL;NNEDI3_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
@@ -218,6 +220,7 @@
       </DebugInformationFormat>
       <StringPooling>true</StringPooling>
       <OpenMPSupport>true</OpenMPSupport>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -232,9 +235,10 @@
       <GenerateDebugInformation>false</GenerateDebugInformation>
     </MASM>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" %(AdditionalOptions)</AdditionalOptions>
-      <CodeGeneration>compute_61,sm_61;compute_35,sm_35</CodeGeneration>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
       <Keep>true</Keep>
+      <GenerateLineInfo>true</GenerateLineInfo>
+      <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -247,7 +251,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;ENABLE_CUDA;NDEBUG;_WINDOWS;_USRDLL;NNEDI3_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
@@ -259,6 +263,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <StringPooling>true</StringPooling>
       <OpenMPSupport>true</OpenMPSupport>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -269,10 +274,11 @@
       <AdditionalDependencies>cudart_static.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" %(AdditionalOptions)</AdditionalOptions>
-      <CodeGeneration>compute_61,sm_61;compute_35,sm_35</CodeGeneration>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
       <Keep>true</Keep>
       <GenerateLineInfo>true</GenerateLineInfo>
+      <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
+      <TargetMachinePlatform>64</TargetMachinePlatform>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release_Intel_SSE4.2|Win32'">
@@ -294,6 +300,8 @@
       <InterproceduralOptimization>SingleFile</InterproceduralOptimization>
       <Parallelization>true</Parallelization>
       <UseProcessorExtensions>SSE42</UseProcessorExtensions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -307,8 +315,8 @@
       <GenerateDebugInformation>false</GenerateDebugInformation>
     </MASM>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" %(AdditionalOptions)</AdditionalOptions>
-      <CodeGeneration>compute_61,sm_61;compute_35,sm_35</CodeGeneration>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
+      <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release_Intel_XP_Core2_AVX2|Win32'">
@@ -330,6 +338,8 @@
       <InterproceduralOptimization>SingleFile</InterproceduralOptimization>
       <Parallelization>true</Parallelization>
       <UseProcessorExtensions>AVX2</UseProcessorExtensions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -343,8 +353,8 @@
       <GenerateDebugInformation>false</GenerateDebugInformation>
     </MASM>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" %(AdditionalOptions)</AdditionalOptions>
-      <CodeGeneration>compute_61,sm_61;compute_35,sm_35</CodeGeneration>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
+      <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release_Intel_SSE4.2|x64'">
@@ -366,6 +376,8 @@
       <InterproceduralOptimization>SingleFile</InterproceduralOptimization>
       <Parallelization>true</Parallelization>
       <UseProcessorExtensions>SSE42</UseProcessorExtensions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -376,9 +388,10 @@
       <AdditionalDependencies>cudart.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" %(AdditionalOptions)</AdditionalOptions>
-      <CodeGeneration>compute_61,sm_61;compute_35,sm_35</CodeGeneration>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
       <GenerateLineInfo>true</GenerateLineInfo>
+      <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
+      <TargetMachinePlatform>64</TargetMachinePlatform>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release_Intel_XP_Core2_AVX2|x64'">
@@ -400,6 +413,8 @@
       <InterproceduralOptimization>SingleFile</InterproceduralOptimization>
       <Parallelization>true</Parallelization>
       <UseProcessorExtensions>AVX2</UseProcessorExtensions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -410,9 +425,10 @@
       <AdditionalDependencies>cudart.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" %(AdditionalOptions)</AdditionalOptions>
-      <CodeGeneration>compute_61,sm_61;compute_35,sm_35</CodeGeneration>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
       <GenerateLineInfo>true</GenerateLineInfo>
+      <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
+      <TargetMachinePlatform>64</TargetMachinePlatform>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -521,6 +537,5 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 8.0.targets" />
   </ImportGroup>
 </Project>
