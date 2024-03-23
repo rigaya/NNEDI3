@@ -1630,14 +1630,17 @@ PVideoFrame nnedi3::GetFrameCUDA(int n, int fn, PNeoEnv env)
         srcptr += srcpitch * off;
         srcpitch *= 2;
       }
-
+#if 0
       // refを作成
       CopyPadCUDA(pixelsize, refptr, refpitch, srcptr, srcpitch, width, height, env);
 
       // 補間じゃないピクセルはコピーしておく
       // TODO: dhのときはどっちにコピーするんだ？？
       BitBltCUDA(dstptr + dstpitch * off, dstpitch * 2, srcptr, srcpitch, width, height, env);
-
+#else
+	  // CopyPadCUDA と BitBltCUDA を統合
+	  PadRefAndCopyHalfCUDA(dstptr + dstpitch * off, dstpitch * 2, refptr, refpitch, srcptr, srcpitch, width, height, env);
+#endif
       // 補完処理本体
       EvalCUDA(pixelsize, bits_per_pixel,
         dstptr + dstpitch * fn, dstpitch * 2, refptr - refpitch * off, refpitch, width, height,
