@@ -1,0 +1,9 @@
+Debug
+Release
+
+/.vs
+*.sdf
+*.suo
+*.tlog
+/packages
+*.vcxproj.user
