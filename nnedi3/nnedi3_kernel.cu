@@ -519,9 +519,9 @@ void BitBltCUDA(pixel_t* dst, int dstpitch, const pixel_t* src, int srcpitch, in
 }
 
 void PadRefAndCopyHalfCUDA(
-    pixel_t *dst, const int dstpitch, pixel_t *ref, const int refpitch, const pixel_t *src, const int srcpitch, const int width, const int height, PNeoEnv env) {
+    pixel_t *dst, const int dstpitch, pixel_t *ref, const int refpitch, const pixel_t *src, const int srcpitch, const int width, const int height, void *stream_, PNeoEnv env) {
     typedef typename VectorType<pixel_t>::type vpixel_t;
-    cudaStream_t stream = static_cast<cudaStream_t>(env->GetDeviceStream());
+    cudaStream_t stream = static_cast<cudaStream_t>(stream_);
     const int hpad = 32;
     const int hpad4 = hpad/4;
     const int vpad = 3;
@@ -541,7 +541,7 @@ public:
     typedef void(*F)(
         dim3 preblock,
         pixel_t* dst, int dstpitch, const pixel_t* ref, int refpitch, uchar2* workNN, int* workBlock,
-        const int16_t* weights1, int weights1pitch, int val_min, int val_max, PNeoEnv env);
+        const int16_t* weights1, int weights1pitch, int val_min, int val_max, void *stream_, PNeoEnv env);
 
     static F Get(int qual, int nns, int xdia, int ydia) {
         switch (qual) {
@@ -556,9 +556,9 @@ private:
     static void Launch(
         dim3 preblock,
         pixel_t* dst, int dstpitch, const pixel_t* ref, int refpitch, uchar2* workNN, int* workBlock,
-        const int16_t* weights1, int weights1pitch, int val_min, int val_max, PNeoEnv env)
+        const int16_t* weights1, int weights1pitch, int val_min, int val_max, void *stream_, PNeoEnv env)
     {
-        cudaStream_t stream = static_cast<cudaStream_t>(env->GetDeviceStream());
+        cudaStream_t stream = static_cast<cudaStream_t>(stream_);
 
         const short2* ws = (const short2*)weights1;
         const float2* wf = (const float2 *)&ws[NN * READ::K];
@@ -609,7 +609,7 @@ void EvalCUDA(int pixelsize, int bits_per_pixel,
     pixel_t* dst, int dstpitch, const pixel_t* ref, int refpitch, int width, int height,
     const int16_t* weights0, const int16_t* weights1, int weights1pitch,
     uint8_t* workNN_, uint8_t* workBlock_,
-    int range_mode, int qual, int nns, int xdia, int ydia, PNeoEnv env) {
+    int range_mode, int qual, int nns, int xdia, int ydia, void *stream_, PNeoEnv env) {
     typedef typename VectorType<pixel_t>::type vpixel_t;
 
     int bitsm8 = bits_per_pixel - 8;
@@ -633,7 +633,7 @@ void EvalCUDA(int pixelsize, int bits_per_pixel,
         break;
     }
 
-    cudaStream_t stream = static_cast<cudaStream_t>(env->GetDeviceStream());
+    cudaStream_t stream = static_cast<cudaStream_t>(stream_);
 
     int dstpitch4 = dstpitch / 4;
     int refpitch4 = refpitch / 4;
@@ -660,5 +660,127 @@ void EvalCUDA(int pixelsize, int bits_per_pixel,
 
     const pixel_t *refpp = ref - (((ydia >> 1) - 1) * refpitch + ((xdia >> 1) - 1));
     launch_compute(blocks, dst, dstpitch, refpp, refpitch,
-        workNN, workBlock, weights1, weights1pitch, val_min, val_max, env);
+        workNN, workBlock, weights1, weights1pitch, val_min, val_max, stream_, env);
+}
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+cudaEventPlanes::cudaEventPlanes() : start(nullptr), endY(nullptr), endU(nullptr), endV(nullptr), streamMain(nullptr), streamY(nullptr), streamU(nullptr), streamV(nullptr) {}
+cudaEventPlanes::~cudaEventPlanes() {
+    if (start) cudaEventDestroy(start);
+    if (endY) cudaEventDestroy(endY);
+    if (endU) cudaEventDestroy(endU);
+    if (endV) cudaEventDestroy(endV);
+}
+void cudaEventPlanes::init() {
+    if (!start) cudaEventCreate(&start);
+    if (!endY) cudaEventCreate(&endY);
+    if (!endU) cudaEventCreate(&endU);
+    if (!endV) cudaEventCreate(&endV);
+}
+void cudaEventPlanes::startPlane(cudaStream_t sMain, cudaStream_t sY, cudaStream_t sU, cudaStream_t sV) {
+    streamMain = sMain;
+    streamY = sY;
+    streamU = sU;
+    streamV = sV;
+    cudaEventRecord(start, sMain);
+    if (sY) {
+        cudaStreamWaitEvent(sY, start);
+    }
+    if (sU) {
+        cudaStreamWaitEvent(sU, start);
+    }
+    if (sV) {
+        cudaStreamWaitEvent(sV, start);
+    }
+}
+void cudaEventPlanes::finPlane() {
+    if (streamY) cudaEventRecord(endY, streamY);
+    if (streamU) cudaEventRecord(endU, streamU);
+    if (streamV) cudaEventRecord(endV, streamV);
+    if (streamY || streamU || streamV) {
+        if (streamY) cudaStreamWaitEvent(streamMain, endY);
+        if (streamU) cudaStreamWaitEvent(streamMain, endU);
+        if (streamV) cudaStreamWaitEvent(streamMain, endV);
+    }
+}
+bool cudaEventPlanes::planeYFin() {
+    return cudaEventQuery(endY) == cudaSuccess;
+}
+bool cudaEventPlanes::planeUFin() {
+    return cudaEventQuery(endU) == cudaSuccess;
+}
+bool cudaEventPlanes::planeVFin() {
+    return cudaEventQuery(endV) == cudaSuccess;
+}
+
+CudaPlaneEventsPool::CudaPlaneEventsPool() : events() {}
+CudaPlaneEventsPool::~CudaPlaneEventsPool() { }
+
+cudaEventPlanes *CudaPlaneEventsPool::PlaneStreamStart(cudaStream_t sMain, cudaStream_t sY, cudaStream_t sU, cudaStream_t sV) {
+    cudaEventPlanes *ptr = nullptr;
+    // events ‚Ì’†g‚ðæ“ª‚©‚çŒ©‚ÄAcudaEventQuery‚ÅcudaSuccess‚ð•Ô‚é‚à‚Ì‚ª‚ ‚ê‚ÎA‚»‚ê‚ð––”ö‚ÉˆÚ“®‚·‚é
+    auto it = events.begin();
+    if (it != events.end()) {
+        if ((*it)->planeYFin() && (*it)->planeUFin() && (*it)->planeVFin()) {
+            auto e = std::move(*it);
+            events.erase(it);
+            events.push_back(std::move(e));
+            ptr = events.back().get();
+        }
+    }
+    if (!ptr) {
+        events.push_back(std::make_unique<cudaEventPlanes>());
+        ptr = events.back().get();
+        ptr->init();
+    }
+    ptr->startPlane(sMain, sY, sU, sV);
+    return ptr;
+}
+
+cudaPlaneStreams::cudaPlaneStreams() : stream(nullptr), streamY(nullptr), streamU(nullptr), streamV(nullptr), eventPool() {}
+cudaPlaneStreams::~cudaPlaneStreams() {
+    if (streamY) {
+        cudaStreamDestroy(streamY);
+        streamY = nullptr;
+    }
+    if (streamU) {
+        cudaStreamDestroy(streamU);
+        streamU = nullptr;
+    }
+    if (streamV) {
+        cudaStreamDestroy(streamV);
+        streamV = nullptr;
+    }
+}
+void cudaPlaneStreams::initStream(cudaStream_t stream_) {
+    stream = stream_;
+}
+cudaEventPlanes *cudaPlaneStreams::CreateEventPlanes() {
+    if (!streamY) {
+        cudaStreamCreateWithFlags(&streamY, cudaStreamNonBlocking);
+        cudaStreamCreateWithFlags(&streamU, cudaStreamNonBlocking);
+        cudaStreamCreateWithFlags(&streamV, cudaStreamNonBlocking);
+    }
+    return eventPool.PlaneStreamStart(stream, streamY, streamU, streamV);
+}
+void *cudaPlaneStreams::GetDeviceStreamY() {
+    return streamY;
+}
+void *cudaPlaneStreams::GetDeviceStreamU() {
+    return streamU;
+}
+void *cudaPlaneStreams::GetDeviceStreamV() {
+    return streamV;
+}
+void *cudaPlaneStreams::GetDeviceStreamPlane(int idx) {
+    switch (idx) {
+        case 1: return streamU;
+        case 2: return streamV;
+        case 0:
+        default: return streamY;
+    }
+    return stream;
 }

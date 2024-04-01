@@ -92,6 +92,7 @@ protected:
   int weight1pitch;
   std::unique_ptr<DeviceLocalData<int16_t>> dweights0;
   std::unique_ptr<DeviceLocalData<int16_t>> dweights1;
+  std::unique_ptr<cudaPlaneStreams> planeStreams;
 
 	void calcStartEnd2(PVideoFrame dst);
 	void copyPad(int n,int fn,IScriptEnvironment *env);

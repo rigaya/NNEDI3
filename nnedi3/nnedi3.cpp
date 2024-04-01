@@ -1547,6 +1547,10 @@ void nnedi3::calcStartEnd2(PVideoFrame dst)
 
 PVideoFrame nnedi3::GetFrameCUDA(int n, int fn, PNeoEnv env)
 {
+  if (!planeStreams) {
+  	planeStreams = std::make_unique<cudaPlaneStreams>();
+	planeStreams->initStream((cudaStream_t)env->GetDeviceStream());
+  }
   const int off = 1 - fn;
   PVideoFrame src = child->GetFrame(n, env);
 #if 0
@@ -1603,6 +1607,8 @@ PVideoFrame nnedi3::GetFrameCUDA(int n, int fn, PNeoEnv env)
   PS_INFO *pss = pssInfo;
   bool enable[4] = { pss->Y, pss->U, pss->V, pss->A };
 
+  auto planeEvent = planeStreams->CreateEventPlanes();
+
   for (uint8_t b = 0; b < PlaneMax; b++) {
     if (enable[b]) {
       int xsub = vi.GetPlaneWidthSubsampling(plane[b]);
@@ -1639,15 +1645,16 @@ PVideoFrame nnedi3::GetFrameCUDA(int n, int fn, PNeoEnv env)
       BitBltCUDA(dstptr + dstpitch * off, dstpitch * 2, srcptr, srcpitch, width, height, env);
 #else
 	  // CopyPadCUDA ‚Æ BitBltCUDA ‚ð“‡
-	  PadRefAndCopyHalfCUDA(dstptr + dstpitch * off, dstpitch * 2, refptr, refpitch, srcptr, srcpitch, width, height, env);
+	  PadRefAndCopyHalfCUDA(dstptr + dstpitch * off, dstpitch * 2, refptr, refpitch, srcptr, srcpitch, width, height, planeStreams->GetDeviceStreamPlane(b), env);
 #endif
       // •âŠ®ˆ—–{‘Ì
       EvalCUDA(pixelsize, bits_per_pixel,
         dstptr + dstpitch * fn, dstpitch * 2, refptr - refpitch * off, refpitch, width, height,
         dweights0->GetData(env), dweights1->GetData(env), weight1pitch,
-        nnWork, blockWork, pss->plane_range[b], pss->qual, pss->nns, pss->xdia, pss->ydia, env);
+        nnWork, blockWork, pss->plane_range[b], pss->qual, pss->nns, pss->xdia, pss->ydia, planeStreams->GetDeviceStreamPlane(b), env);
     }
   }
+  if (planeEvent) planeEvent->finPlane();
 
   return dst;
 }
