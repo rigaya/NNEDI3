@@ -1589,13 +1589,10 @@ PVideoFrame nnedi3::GetFrameCUDA(int n, int fn, PNeoEnv env)
   GetWorkBytes(refw, refh, nnBytes, blockBytes);
   int work_bytes = nnBytes + blockBytes;
   VideoInfo workvi = VideoInfo();
-  workvi.pixel_type = VideoInfo::CS_BGR32;
-  workvi.width = 2048;
-  workvi.height = nblocks(work_bytes, workvi.width * 4);
+  workvi.pixel_type = VideoInfo::CS_YUVA444P16;
+  workvi.width = 2048 * 2;
+  workvi.height = nblocks(work_bytes, workvi.width);
   PVideoFrame work = env->NewVideoFrame(workvi);
-
-  uint8_t* nnWork = work->GetWritePtr(0);
-  uint8_t* blockWork = &nnWork[nnBytes];
 
   PVideoFrame dst = env->NewVideoFrame(vi);
 
@@ -1630,6 +1627,9 @@ PVideoFrame nnedi3::GetFrameCUDA(int n, int fn, PNeoEnv env)
 
       const uint8_t* srcptr = src->GetReadPtr(plane[b]);
       int srcpitch = src->GetPitch(plane[b]);
+
+	  uint8_t* nnWork = work->GetWritePtr(plane[b]);
+	  uint8_t* blockWork = &nnWork[nnBytes];
 
       if (!dh) {
         // フィールド分進める
