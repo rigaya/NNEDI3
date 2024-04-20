@@ -171,7 +171,7 @@
       <GenerateDebugInformation>false</GenerateDebugInformation>
     </MASM>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions) -Wno-deprecated-gpu-targets</AdditionalOptions>
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
     </CudaCompile>
   </ItemDefinitionGroup>
@@ -192,7 +192,7 @@
       <AdditionalDependencies>cudart.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions) -Wno-deprecated-gpu-targets</AdditionalOptions>
       <GenerateLineInfo>true</GenerateLineInfo>
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
       <TargetMachinePlatform>64</TargetMachinePlatform>
@@ -235,7 +235,7 @@
       <GenerateDebugInformation>false</GenerateDebugInformation>
     </MASM>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions) -Wno-deprecated-gpu-targets</AdditionalOptions>
       <Keep>true</Keep>
       <GenerateLineInfo>true</GenerateLineInfo>
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
@@ -274,7 +274,7 @@
       <AdditionalDependencies>cudart_static.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions) -Wno-deprecated-gpu-targets</AdditionalOptions>
       <Keep>true</Keep>
       <GenerateLineInfo>true</GenerateLineInfo>
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
@@ -315,7 +315,7 @@
       <GenerateDebugInformation>false</GenerateDebugInformation>
     </MASM>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions) -Wno-deprecated-gpu-targets</AdditionalOptions>
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
     </CudaCompile>
   </ItemDefinitionGroup>
@@ -353,7 +353,7 @@
       <GenerateDebugInformation>false</GenerateDebugInformation>
     </MASM>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions) -Wno-deprecated-gpu-targets</AdditionalOptions>
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
     </CudaCompile>
   </ItemDefinitionGroup>
@@ -388,7 +388,7 @@
       <AdditionalDependencies>cudart.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions) -Wno-deprecated-gpu-targets</AdditionalOptions>
       <GenerateLineInfo>true</GenerateLineInfo>
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
       <TargetMachinePlatform>64</TargetMachinePlatform>
@@ -425,7 +425,7 @@
       <AdditionalDependencies>cudart.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <CudaCompile>
-      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions) -Wno-deprecated-gpu-targets</AdditionalOptions>
       <GenerateLineInfo>true</GenerateLineInfo>
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
       <TargetMachinePlatform>64</TargetMachinePlatform>
