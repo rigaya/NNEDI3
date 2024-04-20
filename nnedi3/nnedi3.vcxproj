@@ -174,6 +174,10 @@
       <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions) -Wno-deprecated-gpu-targets</AdditionalOptions>
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
     </CudaCompile>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir)common</AdditionalIncludeDirectories>
+      <AdditionalOptions>/c 65001 %(AdditionalOptions)</AdditionalOptions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -197,6 +201,10 @@
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
       <TargetMachinePlatform>64</TargetMachinePlatform>
     </CudaCompile>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir)common</AdditionalIncludeDirectories>
+      <AdditionalOptions>/c 65001 %(AdditionalOptions)</AdditionalOptions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -240,6 +248,10 @@
       <GenerateLineInfo>true</GenerateLineInfo>
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
     </CudaCompile>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir)common</AdditionalIncludeDirectories>
+      <AdditionalOptions>/c 65001 %(AdditionalOptions)</AdditionalOptions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -280,6 +292,10 @@
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
       <TargetMachinePlatform>64</TargetMachinePlatform>
     </CudaCompile>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir)common</AdditionalIncludeDirectories>
+      <AdditionalOptions>/c 65001 %(AdditionalOptions)</AdditionalOptions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release_Intel_SSE4.2|Win32'">
     <ClCompile>
@@ -318,6 +334,10 @@
       <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions) -Wno-deprecated-gpu-targets</AdditionalOptions>
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
     </CudaCompile>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir)common</AdditionalIncludeDirectories>
+      <AdditionalOptions>/c 65001 %(AdditionalOptions)</AdditionalOptions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release_Intel_XP_Core2_AVX2|Win32'">
     <ClCompile>
@@ -356,6 +376,10 @@
       <AdditionalOptions>-Xcompiler "/wd 4819" -std=c++17 -Xcudafe "--display_error_number --diag_suppress=177 --diag_suppress=68 --diag_suppress=550" %(AdditionalOptions) -Wno-deprecated-gpu-targets</AdditionalOptions>
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
     </CudaCompile>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir)common</AdditionalIncludeDirectories>
+      <AdditionalOptions>/c 65001 %(AdditionalOptions)</AdditionalOptions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release_Intel_SSE4.2|x64'">
     <ClCompile>
@@ -393,6 +417,10 @@
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
       <TargetMachinePlatform>64</TargetMachinePlatform>
     </CudaCompile>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir)common</AdditionalIncludeDirectories>
+      <AdditionalOptions>/c 65001 %(AdditionalOptions)</AdditionalOptions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release_Intel_XP_Core2_AVX2|x64'">
     <ClCompile>
@@ -430,9 +458,14 @@
       <CodeGeneration>$(CUDA_CODE_GEN)</CodeGeneration>
       <TargetMachinePlatform>64</TargetMachinePlatform>
     </CudaCompile>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir)common</AdditionalIncludeDirectories>
+      <AdditionalOptions>/c 65001 %(AdditionalOptions)</AdditionalOptions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="internal.h" />
+    <ClInclude Include="knnedi_version.h" />
     <ClInclude Include="nnedi3.h" />
     <ClInclude Include="nnedi3_kernel.h" />
     <ClInclude Include="PlanarFrame.h" />
