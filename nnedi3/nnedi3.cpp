@@ -124,14 +124,21 @@ extern "C" void weightedAvgElliottMul5_m16_AVX(const float *w,const int n,float 
 extern "C" void uc2s64_AVX(const uint8_t *t,const int pitch,float *p);
 extern "C" void computeNetwork0new_AVX(const float *datai,const float *weights,uint8_t *d);
 
+#if !(defined(_WIN32) || defined(_WIN64))
+extern "C" {
+extern char _binary_binary1_bin_start[];
+extern char _binary_binary1_bin_end[];
+}
+#endif
 
+#if defined(_WIN32) || defined(_WIN64)
 EXTERN_C IMAGE_DOS_HEADER __ImageBase;
-
+#endif
 #define myfree(ptr) if (ptr!=NULL) { free(ptr); ptr=NULL;}
 #define myalignedfree(ptr) if (ptr!=NULL) { _aligned_free(ptr); ptr=NULL;}
 #define mydelete(ptr) if (ptr!=NULL) { delete ptr; ptr=NULL;}
 
-static ThreadPoolInterface *poolInterface;
+static ThreadPoolInterfaceBase *poolInterface;
 
 #include "CommonFunctions.h"
 
@@ -181,8 +188,13 @@ void shufflePreScrnL2L3(float *wf, float *rf, const int opt)
 
 nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,int _nsize,int _nns,int _qual,int _etype,int _pscrn,
 	uint8_t _threads,int _opt,int _fapprox,bool _sleep,int range_mode,bool _avsp, IScriptEnvironment *env_) :
-	GenericVideoFilter(_child),field(_field),dh(_dh),Y(_Y),U(_U),V(_V),A(_A),nsize(_nsize),nns(_nns),qual(_qual),
-	etype(_etype),pscrn(_pscrn),threads(_threads),opt(_opt),fapprox(_fapprox),sleep(_sleep),avsp(_avsp)
+	GenericVideoFilter(_child),
+	dh(_dh), Y(_Y), U(_U), V(_V), A(_A),
+	pscrn(_pscrn),
+	field(_field), opt(_opt), nns(_nns), etype(_etype),
+	qual(_qual), nsize(_nsize), fapprox(_fapprox),
+	threads(_threads), threads_number(0),
+	sleep(_sleep), avsp(_avsp)
 {
   PNeoEnv env = env_;
 
@@ -439,9 +451,9 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			}
 		}
 
-		char buf[512];
-		sprintf_s(buf,512,"nnedi3: auto-detected opt setting = %d (%d)\n",opt,CPUF);
-		OutputDebugString(buf);
+		//char buf[512];
+		//sprintf_s(buf,512,"nnedi3: auto-detected opt setting = %d (%d)\n",opt,CPUF);
+		//OutputDebugString(buf);
 	}
 
 	const int dims0 = 49*4+5*4+9*4;
@@ -486,6 +498,8 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			env->ThrowError("nnedi3: Error while allocating lcount[%d]!",i);
 		}
 	}
+	
+#if defined(_WIN32) || defined(_WIN64)
 	char nbuf[512];
 	GetModuleFileName((HINSTANCE)&__ImageBase,nbuf,512);
 	HMODULE hmod = GetModuleHandle(nbuf);
@@ -506,8 +520,10 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 		env->ThrowError("nnedi3: error loading resource (%x,%x,%x,%x,%d,%d)!",hmod,hrsrc,hglob,lplock,dwSize,
 		(dims0+dims0new*3+dims1tsize*2)*sizeof(float));
 	}
-
 	float *bdata = (float *)lplock;
+#else
+	float *bdata = (float *)_binary_binary1_bin_start;
+#endif
 
 	// Adjust prescreener weights
 	if (pscrn>=2) // using new prescreener
@@ -2233,7 +2249,7 @@ void dotProdS_C_16(const float *dataf,const float *weightsf,float *vals,const in
 
 	for (int i=0; i<n; i++)
 	{
-		__int64 sum = 0;
+		int64_t sum = 0;
 		const int off = ((i>>2)<<3)+(i&3);
 
 		for (int j=0; j<len; j++)
@@ -2274,7 +2290,7 @@ void computeNetwork0new_C_16(const float *datai, const float *weights, uint8_t *
 
 	for (int i=0; i<4; i++)
 	{
-		__int64 sum = 0;
+		int64_t sum = 0;
 		const int i_3 = i << 3;
 
 		for (int j=0; j<64; j++)
@@ -2849,15 +2865,15 @@ void extract_m8_i16_C(const uint8_t *srcp,const int stride,const int xdia,const 
 }
 
 
-__declspec(align(16)) const float exp_lo[4] = { -80.0f, -80.0f, -80.0f, -80.0f };
-__declspec(align(16)) const float exp_hi[4] = { +80.0f, +80.0f, +80.0f, +80.0f };
+alignas(16) const float exp_lo[4] = { -80.0f, -80.0f, -80.0f, -80.0f };
+alignas(16) const float exp_hi[4] = { +80.0f, +80.0f, +80.0f, +80.0f };
 
 // exp from:  A Fast, Compact Approximation of the Exponential Function (1998)
 //            Nicol N. Schraudolph
 
-__declspec(align(16)) const float e0_mult[4] = { // (1.0/ln(2))*(2^23)
+alignas(16) const float e0_mult[4] = { // (1.0/ln(2))*(2^23)
 	12102203.161561486f, 12102203.161561486f, 12102203.161561486f, 12102203.161561486f };
-__declspec(align(16)) const float e0_bias[4] = { // (2^23)*127.0-486411.0
+alignas(16) const float e0_bias[4] = { // (2^23)*127.0-486411.0
 	1064866805.0f, 1064866805.0f, 1064866805.0f, 1064866805.0f };
 
 void e0_m16_C(float *s,const int n)
@@ -2871,13 +2887,13 @@ void e0_m16_C(float *s,const int n)
 
 // exp from Loren Merritt
 
-_declspec(align(16)) const float e1_scale[4] = { // 1/ln(2)
+alignas(16) const float e1_scale[4] = { // 1/ln(2)
 	1.4426950409f, 1.4426950409f, 1.4426950409f, 1.4426950409f };
-_declspec(align(16)) const float e1_bias[4] = { // 3<<22
+alignas(16) const float e1_bias[4] = { // 3<<22
 	12582912.0f, 12582912.0f, 12582912.0f, 12582912.0f };
-_declspec(align(16)) const float e1_c0[4] = { 1.00035f, 1.00035f, 1.00035f, 1.00035f };
-_declspec(align(16)) const float e1_c1[4] = { 0.701277797f, 0.701277797f, 0.701277797f, 0.701277797f };
-_declspec(align(16)) const float e1_c2[4] = { 0.237348593f, 0.237348593f, 0.237348593f, 0.237348593f };
+alignas(16) const float e1_c0[4] = { 1.00035f, 1.00035f, 1.00035f, 1.00035f };
+alignas(16) const float e1_c1[4] = { 0.701277797f, 0.701277797f, 0.701277797f, 0.701277797f };
+alignas(16) const float e1_c2[4] = { 0.237348593f, 0.237348593f, 0.237348593f, 0.237348593f };
 
 void e1_m16_C(float *s,const int n)
 {
@@ -2899,7 +2915,7 @@ void e2_m16_C(float *s,const int n)
 }
 
 
-__declspec(align(16)) const float min_weight_sum[4] = { 1e-10f, 1e-10f, 1e-10f, 1e-10f };
+alignas(16) const float min_weight_sum[4] = { 1e-10f, 1e-10f, 1e-10f, 1e-10f };
 
 void weightedAvgElliottMul5_m16_C(const float *w,const int n,float *mstd)
 {
@@ -4815,7 +4831,7 @@ extern "C" __declspec(dllexport) const char* __stdcall AvisynthPluginInit3(IScri
 {
 	AVS_linkage = vectors;
 
-	poolInterface=ThreadPoolInterface::Init(0);
+	poolInterface=ThreadPoolInterfaceBase::Init(0);
 
 	if (!poolInterface->GetThreadPoolInterfaceStatus()) env->ThrowError("nnedi3: Error with the TheadPool status!");
 

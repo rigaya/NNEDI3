@@ -1,10 +1,11 @@
-#define _CRT_SECURE_NO_WARNINGS
+ï»¿#define _CRT_SECURE_NO_WARNINGS
 #include "avisynth.h"
 
-#define NOMINMAX
-#include <windows.h>
+
+#include "rgy_osdep.h"
 
 #include <stdio.h>
+#include <cfloat>
 
 #include <cuda_runtime_api.h>
 #include <cuda_device_runtime_api.h>
@@ -15,7 +16,7 @@
 #include "VectorFunctions.cuh"
 #include "ReduceKernel.cuh"
 
-// common‚Ìcpp‚ğæ‚è“ü‚ê‚é
+// commonã®cppã‚’å–ã‚Šå…¥ã‚Œã‚‹
 #include "DeviceLocalData.cpp"
 
 #ifndef NDEBUG
@@ -28,12 +29,12 @@
 #endif
 
 void OnCudaError(cudaError_t err) {
-#if 1 // ƒfƒoƒbƒO—pi–{”Ô‚Íæ‚èœ‚­j
-    printf("[CUDA Error] %s (code: %d)\n", cudaGetErrorString(err), err);
+#if 1 // ãƒ‡ãƒãƒƒã‚°ç”¨ï¼ˆæœ¬ç•ªã¯å–ã‚Šé™¤ãï¼‰
+    printf("[CUDA Error] %s (code: %d)Â¥n", cudaGetErrorString(err), err);
 #endif
 }
 
-// width ‚Í Pad ‚ğŠÜ‚Ü‚È‚¢’·‚³
+// width ã¯ Pad ã‚’å«ã¾ãªã„é•·ã•
 // block(2, -), threads(hPad, -)
 template <typename pixel_t>
 __global__ void kl_pad_h(pixel_t* ptr, int pitch, int hPad, int width, int height) {
@@ -50,7 +51,7 @@ __global__ void kl_pad_h(pixel_t* ptr, int pitch, int hPad, int width, int heigh
     }
 }
 
-// height ‚Í Pad ‚ğŠÜ‚Ü‚È‚¢’·‚³
+// height ã¯ Pad ã‚’å«ã¾ãªã„é•·ã•
 // block(-, 2), threads(-, vPad)
 template <typename pixel_t>
 __global__ void kl_pad_v(pixel_t* ptr, int pitch, int vPad, int width, int height) {
@@ -82,15 +83,15 @@ template <typename T> __device__ void inline swap(T& a, T& b) {
     T c(a); a = b; b = c;
 }
 
-// pad‚ÌƒTƒCƒY‚Í32
+// padã®ã‚µã‚¤ã‚ºã¯32
 template <typename vpixel_t>
 __global__ void kl_pad_ref_and_copy_half(
-    vpixel_t *dst, const int dstpitch4, // 2s•ª‚ğ‘z’è
+    vpixel_t *dst, const int dstpitch4, // 2è¡Œåˆ†ã‚’æƒ³å®š
     vpixel_t *ref, const int refpitch4,
-    const vpixel_t *src, const int srcpitch4, // 2s•ª‚ğ‘z’è
+    const vpixel_t *src, const int srcpitch4, // 2è¡Œåˆ†ã‚’æƒ³å®š
     const int width4, const int height,
     const int hpad4, const int vpad) {
-    const int x = threadIdx.x + blockIdx.x * blockDim.x - hpad4; // 1ƒXƒŒƒbƒh4pixel
+    const int x = threadIdx.x + blockIdx.x * blockDim.x - hpad4; // 1ã‚¹ãƒ¬ãƒƒãƒ‰4pixel
     const int y = threadIdx.y + blockIdx.y * blockDim.y - vpad;
 
     if (x < width4 + hpad4 && y < height + vpad) {
@@ -155,7 +156,7 @@ __global__ void kl_prescreening(
     int xbase = tx + blockIdx.x * PRE_BLOCK_W;
     int ybase = ty + blockIdx.y * PRE_BLOCK_H;
 
-    float4 result = { 1,1,1,1 }; // –³Œø‚È’l‚É‰Šú‰»
+    float4 result = { 1,1,1,1 }; // ç„¡åŠ¹ãªå€¤ã«åˆæœŸåŒ–
 
     if (xbase < width4 && ybase < height) {
 
@@ -171,7 +172,7 @@ __global__ void kl_prescreening(
                     sum += to_int(sws[1 + y * 16]) * v.w;
 #if 0
                     if (xbase == 0 && ybase == 270 && y == 3) {
-                        printf("src=(%d,%d,%d,%d)\n", v.x, v.y, v.z, v.w);
+                        printf("src=(%d,%d,%d,%d)Â¥n", v.x, v.y, v.z, v.w);
                     }
 #endif
                 } else if (x < 4) {
@@ -205,7 +206,7 @@ __global__ void kl_prescreening(
 
 #if 0
     if (xbase == 0 && ybase == 0) {
-        printf("(0-3,0)=(%f,%f,%f,%f)\n", result.x, result.y, result.z, result.w);
+        printf("(0-3,0)=(%f,%f,%f,%f)Â¥n", result.x, result.y, result.z, result.w);
     }
 #endif
 
@@ -230,12 +231,12 @@ __global__ void kl_prescreening(
         int4 src4 = to_int(ref[(xbase + 2) + (ybase + 2) * refpitch4]);
         int4 src6 = to_int(ref[(xbase + 2) + (ybase + 3) * refpitch4]);
 
-        // ƒoƒCƒLƒ…[ƒrƒbƒN•âŠÔ
+        // ãƒã‚¤ã‚­ãƒ¥ãƒ¼ãƒ“ãƒƒã‚¯è£œé–“
         int4 tmp = clamp((((src2 + src4) * 19 - (src3p + src6) * 3 + 16) >> 5), val_min, val_max);
 
-        // result <= 0‚Ì‚Æ‚±‚ë‚Í‚ ‚Æ‚ÅŒvZ‚·‚é‚Ì‚Å•K—v‚È‚¢‚ª
-        // 1ŒÂ‘‚«‚ñ‚Å‚à4ŒÂ‘‚«‚ñ‚Å‚à•Ï‚í‚ç‚È‚¢‚Ì‚Åi‚Ş‚µ‚ë’x‚­‚È‚é‰Â”\«‚ª‚ ‚é‚Ì‚Åj
-        // ‘S•”‘‚«‚Ş
+        // result <= 0ã®ã¨ã“ã‚ã¯ã‚ã¨ã§è¨ˆç®—ã™ã‚‹ã®ã§å¿…è¦ãªã„ãŒ
+        // 1å€‹æ›¸ãè¾¼ã‚“ã§ã‚‚4å€‹æ›¸ãè¾¼ã‚“ã§ã‚‚å¤‰ã‚ã‚‰ãªã„ã®ã§ï¼ˆã‚€ã—ã‚é…ããªã‚‹å¯èƒ½æ€§ãŒã‚ã‚‹ã®ã§ï¼‰
+        // å…¨éƒ¨æ›¸ãè¾¼ã‚€
         dst[xbase + ybase * dstpitch4] = VHelper<vpixel_t>::cast_to(tmp);
     }
 }
@@ -248,7 +249,7 @@ enum {
 template <typename pixel_t> struct ReadPixel8x6 {
     enum { K = 8 * 6 };
     __device__ void operator()(int tx, int ty, pixel_t dst[][K], const pixel_t* src, int srcpitch) {
-        // tx‚ğ2‚Â‚É•ªŠ„
+        // txã‚’2ã¤ã«åˆ†å‰²
         int yoff = (tx >> 3);
         int ttx = tx & 7;
         dst[ty][tx + 0] = src[ttx + (yoff + 0) * srcpitch];
@@ -290,7 +291,7 @@ template <typename pixel_t> struct ReadPixel48x6 {
 template <typename pixel_t> struct ReadPixel8x4 {
     enum { K = 8 * 4 };
     __device__ void operator()(int tx, int ty, pixel_t dst[][K], const pixel_t* src, int srcpitch) {
-        // tx‚ğ2‚Â‚É•ªŠ„
+        // txã‚’2ã¤ã«åˆ†å‰²
         int yoff = (tx >> 3);
         int ttx = tx & 7;
         dst[ty][tx + 0] = src[ttx + (yoff + 0) * srcpitch];
@@ -348,7 +349,7 @@ __global__ void kl_compute_nn(pixel_t* dst, int dstpitch,
     int nb = numblocks[bid];
 #if 0
     if (xbase == 0 && ybase == 0 && tx == 0 && ty == 0) {
-        printf("nb=%d\n", nb);
+        printf("nb=%dÂ¥n", nb);
     }
 #endif
     for (int b = 0; b < nb; b += NN_BLOCK_H) {
@@ -363,10 +364,10 @@ __global__ void kl_compute_nn(pixel_t* dst, int dstpitch,
         }
 #if 0
         if (workoff + b + ty == 0 && tx == 0 && ty == 0) {
-            printf("(x,y)=(%d,%d)\n", x, y);
+            printf("(x,y)=(%d,%d)Â¥n", x, y);
         }
         if (x == 0 && y == 0) {
-            printf("HIT!!!\n");
+            printf("HIT!!!Â¥n");
         }
 #endif
         READ readf;
@@ -380,7 +381,7 @@ __global__ void kl_compute_nn(pixel_t* dst, int dstpitch,
             sum += v; sumsq += v * v;
 #if 0
             if (x == 0 && y == 0 && ty == 0) {
-                printf("v[%d]=%d\n", tx + i * NN_BLOCK_W, v);
+                printf("v[%d]=%dÂ¥n", tx + i * NN_BLOCK_W, v);
             }
 #endif
         }
@@ -388,7 +389,7 @@ __global__ void kl_compute_nn(pixel_t* dst, int dstpitch,
         dev_reduce_warp<int, NN_BLOCK_W, AddReducer<int>>(tx, sumsq);
 #if 0
         if (x == 0 && y == 0 && tx == 0 && ty == 0) {
-            printf("sum,sumsq=%d,%d\n", sum, sumsq);
+            printf("sum,sumsq=%d,%dÂ¥n", sum, sumsq);
         }
 #endif
 
@@ -413,7 +414,7 @@ __global__ void kl_compute_nn(pixel_t* dst, int dstpitch,
         __syncthreads();
 #if 0
         if (x == 0 && y == 0 && tx == 0 && ty == 0) {
-            printf("avg,var,invvar=%f,%f,%f\n", avg[ty], var[ty], invvar[ty]);
+            printf("avg,var,invvar=%f,%f,%fÂ¥n", avg[ty], var[ty], invvar[ty]);
         }
 #endif
 
@@ -438,7 +439,7 @@ __global__ void kl_compute_nn(pixel_t* dst, int dstpitch,
                 float res1 = (float)sum.y * wf1.y * invvar[ty] + wf2.y;
 #if 0
                 if (x == 0 && y == 270 && tx == 0 && ty == 0) {
-                    printf("i=%d,%d,%d\n", i * NN_BLOCK_W + tx, sum.x, sum.y);
+                    printf("i=%d,%d,%dÂ¥n", i * NN_BLOCK_W + tx, sum.x, sum.y);
                 }
 #endif
 
@@ -448,7 +449,7 @@ __global__ void kl_compute_nn(pixel_t* dst, int dstpitch,
                 wsum += res0;
 #if 0
                 if (x == 0 && y == 270 && tx == 0 && ty == 0) {
-                    printf("+++=%f,%f,%f\n", res0, res1, res0 * (res1 / (1.0f + fabsf(res1))));
+                    printf("+++=%f,%f,%fÂ¥n", res0, res1, res0 * (res1 / (1.0f + fabsf(res1))));
                 }
 #endif
             }
@@ -457,7 +458,7 @@ __global__ void kl_compute_nn(pixel_t* dst, int dstpitch,
             dev_reduce_warp<float, NN_BLOCK_W, AddReducer<float>>(tx, wsum);
 #if 0
             if (x == 0 && y == 270 && tx == 0 && ty == 0) {
-                printf("vsum,wsum=%f,%f\n", vsum, wsum);
+                printf("vsum,wsum=%f,%fÂ¥n", vsum, wsum);
             }
 #endif
 
@@ -655,7 +656,7 @@ void EvalCUDA(int pixelsize, int bits_per_pixel,
     typename LaunchComputeNN<pixel_t>::F launch_compute = LaunchComputeNN<pixel_t>::Get(qual, nns, xdia, ydia);
 
     if (launch_compute == nullptr) {
-        env->ThrowError("[KNNEDI3] ƒCƒ“ƒXƒ^ƒ“ƒX‰»‚µ‚Ä‚È‚¢ƒpƒ‰ƒ[ƒ^‚Å‚·");
+        env->ThrowError("[KNNEDI3] ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹åŒ–ã—ã¦ãªã„ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ã§ã™");
     }
 
     const pixel_t *refpp = ref - (((ydia >> 1) - 1) * refpitch + ((xdia >> 1) - 1));
@@ -710,7 +711,7 @@ CudaPlaneEventsPool::~CudaPlaneEventsPool() { }
 
 cudaEventPlanes *CudaPlaneEventsPool::PlaneStreamStart(cudaStream_t sMain, cudaStream_t sU, cudaStream_t sV) {
     cudaEventPlanes *ptr = nullptr;
-    // events ‚Ì’†g‚ğæ“ª‚©‚çŒ©‚ÄAcudaEventQuery‚ÅcudaSuccess‚ğ•Ô‚é‚à‚Ì‚ª‚ ‚ê‚ÎA‚»‚ê‚ğ––”ö‚ÉˆÚ“®‚·‚é
+    // events ã®ä¸­èº«ã‚’å…ˆé ­ã‹ã‚‰è¦‹ã¦ã€cudaEventQueryã§cudaSuccessã‚’è¿”ã‚‹ã‚‚ã®ãŒã‚ã‚Œã°ã€ãã‚Œã‚’æœ«å°¾ã«ç§»å‹•ã™ã‚‹
     auto it = events.begin();
     if (it != events.end()) {
         if ((*it)->planeUFin() && (*it)->planeVFin()) {

@@ -18,12 +18,13 @@
 **   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 #include "avisynth.h"
+#include "rgy_osdep.h"
 
-#include <windows.h>
-#define _USE_MATH_DEFINES
 #include <math.h>
-#include <tchar.h>
+#include "rgy_tchar.h"
+#if defined(_WIN32) || defined(_WIN64)
 #include <process.h>
+#endif
 #include <float.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -109,7 +110,7 @@ public:
 	nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,int _nsize,int _nns,int _qual,int _etype,
 		int _pscrn,uint8_t _threads,int _opt,int _fapprox,bool _sleep,int range_mode,bool _asvp,IScriptEnvironment *env);
 	virtual ~nnedi3();
-	PVideoFrame __stdcall nnedi3::GetFrame(int n,IScriptEnvironment *env);
+	PVideoFrame __stdcall GetFrame(int n,IScriptEnvironment *env);
 
 	int __stdcall SetCacheHints(int cachehints, int frame_range);
 
