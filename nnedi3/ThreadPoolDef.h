@@ -1,4 +1,4 @@
-#ifndef __ThreadPoolDef_H__
+﻿#ifndef __ThreadPoolDef_H__
 #define __ThreadPoolDef_H__
 
 #include <stdint.h>

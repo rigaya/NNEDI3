@@ -1,4 +1,4 @@
-// ThreadPoolDLL.cpp : définit les fonctions exportées pour l'application DLL.
+ï»¿// ThreadPoolDLL.cppï£°: dé¦­init les fonctions exporté¦¥s pour l'application DLL.
 //
 
 #include "ThreadPoolInterface.h"

@@ -1,11 +1,11 @@
-#ifndef __ThreadPoolInterface_H__
+﻿#ifndef __ThreadPoolInterface_H__
 #define __ThreadPoolInterface_H__
 
-#include "rgy_osdep.h"
-#include "ThreadPoolDef.h"
-#include "ThreadPool.h"
+#include <Windows.h>
 
-#define THREADPOOLINTERFACE_VERSION "ThreadPoolInterface 2.0.0"
+#include "ThreadPoolDef.h"
+
+#define THREADPOOLINTERFACE_VERSION "ThreadPoolInterface 1.8.0"
 
 typedef struct _UserData
 {
@@ -14,94 +14,89 @@ typedef struct _UserData
 	volatile bool nPollTab[MAX_THREAD_POOL];
 } UserData;
 
-#if defined(_WIN32) || defined(_WIN64)
-class ThreadPoolInterfaceWin;
-typedef ThreadPoolInterfaceWin ThreadPoolInterface;
-#else
-class ThreadPoolInterfaceLinux;
-typedef ThreadPoolInterfaceLinux ThreadPoolInterface;
-#endif
 
-// 基本インターフェースクラス
-class ThreadPoolInterfaceBase
+class ThreadPoolInterface
 {
-public:
-	virtual ~ThreadPoolInterfaceBase(void);
-	static ThreadPoolInterfaceBase* Init(uint8_t num);
+	public :
 
-	uint8_t GetThreadNumber(uint8_t thread_number, bool logical);
+	virtual ~ThreadPoolInterface(void);
+	static ThreadPoolInterface* Init(uint8_t num);
+
+	uint8_t GetThreadNumber(uint8_t thread_number,bool logical);
 	int16_t AddPool(uint8_t num);
 	bool CreatePool(uint8_t num);
 	bool DeletePool(uint8_t num);
 	bool RemovePool(uint8_t num);	
-	bool AllocateThreads(uint8_t thread_number, uint8_t offset_core, uint8_t offset_ht, bool UseMaxPhysCore, bool SetAffinity, bool sleep, int8_t nPool);
+	bool AllocateThreads(uint8_t thread_number,uint8_t offset_core,uint8_t offset_ht,bool UseMaxPhysCore,bool SetAffinity,bool sleep,int8_t nPool);
 	bool GetUserId(uint16_t &UserId);
 	bool RemoveUserId(uint16_t UserId);
-	bool ChangeThreadsAffinity(uint8_t offset_core, uint8_t offset_ht, bool UseMaxPhysCore, bool SetAffinity, bool sleep, int8_t nPool);
-	bool DeAllocateUserThreads(uint16_t UserId, bool check);
-	bool DeAllocatePoolThreads(uint8_t nPool, bool check);
+	bool ChangeThreadsAffinity(uint8_t offset_core,uint8_t offset_ht,bool UseMaxPhysCore,bool SetAffinity,bool sleep,int8_t nPool);
+	bool DeAllocateUserThreads(uint16_t UserId,bool check);
+	bool DeAllocatePoolThreads(uint8_t nPool,bool check);
 	bool DeAllocateAllThreads(bool check);
-	bool RequestThreadPool(uint16_t UserId, uint8_t thread_number, Public_MT_Data_Thread *Data, int8_t nPool, bool Exclusive);
-	bool RequestThreadPool(uint16_t UserId, uint8_t thread_number, Public_MT_Data_Thread *Data, int8_t &nPool, bool Exclusive, bool AllowSeveral);
-	bool ReleaseThreadPool(uint16_t UserId, bool sleep);
-	bool ReleaseThreadPool(uint16_t UserId, bool sleep, int8_t nPool);
+	bool RequestThreadPool(uint16_t UserId,uint8_t thread_number,Public_MT_Data_Thread *Data,int8_t nPool,bool Exclusive);
+	bool RequestThreadPool(uint16_t UserId,uint8_t thread_number,Public_MT_Data_Thread *Data,int8_t &nPool,bool Exclusive,bool AllowSeveral);
+	bool ReleaseThreadPool(uint16_t UserId,bool sleep);
+	bool ReleaseThreadPool(uint16_t UserId,bool sleep,int8_t nPool);
 	bool StartThreads(uint16_t UserId);
-	bool StartThreads(uint16_t UserId, int8_t nPool);
+	bool StartThreads(uint16_t UserId,int8_t nPool);
 	bool WaitThreadsEnd(uint16_t UserId);
-	bool WaitThreadsEnd(uint16_t UserId, int8_t nPool);
-	bool GetThreadPoolStatus(uint16_t UserId, int8_t nPool);
-	uint8_t GetCurrentThreadAllocated(uint16_t UserId, int8_t nPool);
-	uint8_t GetCurrentThreadUsed(uint16_t UserId, int8_t nPool);
+	bool WaitThreadsEnd(uint16_t UserId,int8_t nPool);
+	bool GetThreadPoolStatus(uint16_t UserId,int8_t nPool);
+	uint8_t GetCurrentThreadAllocated(uint16_t UserId,int8_t nPool);
+	uint8_t GetCurrentThreadUsed(uint16_t UserId,int8_t nPool);
 	uint8_t GetLogicalCPUNumber(void);
 	uint8_t GetPhysicalCoreNumber(void);
 	
+	protected :
+	
+	volatile bool Status_Ok;
+	volatile uint8_t NbrePool;
+	
+	public :
+
 	bool GetThreadPoolInterfaceStatus(void) {return(Status_Ok);}
 	int8_t GetCurrentPoolCreated(void) {return((Status_Ok) ? NbrePool:-1);}
 
-#if defined(_WIN32) || defined(_WIN64)
-	friend class ThreadPoolInterfaceWin;
-#else
-	friend class ThreadPoolInterfaceLinux;
-#endif
+	protected :
 
-protected:
-	volatile bool Status_Ok;
-	volatile uint8_t NbrePool;
+	ThreadPoolInterface(void);
+
+	CRITICAL_SECTION CriticalSection;
+	HANDLE ghMutexResources;
+	BOOL CSectionOk;
+	HANDLE JobsEnded[MAX_THREAD_POOL],ThreadPoolFree[MAX_THREAD_POOL];
+	UserData TabId[MAX_USERS];
 	volatile uint16_t NbreUsers;
+	HANDLE EndExclusive;
 	volatile bool Error_Occured;
-	UserData *TabId;
-	
-	ThreadPoolBase *ptrPool[MAX_THREAD_POOL];
-	
-	ThreadPoolInterfaceBase(void);
-	
-	virtual bool EnterCS(void) = 0;
-	virtual void LeaveCS(void) = 0;
-	virtual bool GetMutex(void) = 0;
-	virtual void FreeMutex(void) = 0;
-	virtual bool CreatePoolEvent(uint8_t num) = 0;
-	virtual void FreePool(void) = 0;
-	virtual void FreePool(int8_t nPool) = 0;
-	
-	int16_t GetUserIdIndex(uint16_t UserId);
-	bool ReleaseThreadPoolCore(uint16_t UserId, int16_t index, bool sleep, int8_t nPool);
-	bool StartThreadsCore(int8_t nPool);
-	bool WaitThreadsEndCore(uint16_t UserId, int8_t nPool);
-	
-	// OS依存の変数
+
+	volatile bool ThreadPoolRequested[MAX_THREAD_POOL],JobsRunning[MAX_THREAD_POOL];
+	volatile bool ThreadPoolReleased[MAX_THREAD_POOL],ThreadWaitEnd[MAX_THREAD_POOL];
+	volatile bool ThreadPoolWaitFree[MAX_THREAD_POOL];
+	volatile uint16_t ThreadPoolUserId[MAX_THREAD_POOL];
 	volatile bool ExclusiveMode;
-	volatile bool *ThreadPoolRequested;
-	volatile bool *JobsRunning;
-	volatile bool *ThreadPoolReleased;
-	volatile bool *ThreadWaitEnd;
-	volatile bool *ThreadPoolWaitFree;
-	volatile uint16_t *ThreadPoolUserId;
+	volatile uint8_t NbrePoolEvent;
+
+	bool CreatePoolEvent(uint8_t num);
+	void FreeData(void);
+	void FreePool(void);
+	void FreePool(int8_t nPool);
+	bool EnterCS(void);
+	void LeaveCS(void);
+	bool GetMutex(void);
+	void FreeMutex(void);
+	int16_t GetUserIdIndex(uint16_t UserId);
+	bool ReleaseThreadPoolCore(uint16_t UserId,int16_t index,bool sleep,int8_t nPool);
+	bool StartThreadsCore(int8_t nPool);
+	bool WaitThreadsEndCore(uint16_t UserId,int8_t nPool);
 	
-private:
-	ThreadPoolInterfaceBase(const ThreadPoolInterfaceBase &other);
-	ThreadPoolInterfaceBase& operator = (const ThreadPoolInterfaceBase &other);
-	bool operator == (const ThreadPoolInterfaceBase &other) const;
-	bool operator != (const ThreadPoolInterfaceBase &other) const;
+	private :
+
+	ThreadPoolInterface (const ThreadPoolInterface &other);
+	ThreadPoolInterface& operator = (const ThreadPoolInterface &other);
+	bool operator == (const ThreadPoolInterface &other) const;
+	bool operator != (const ThreadPoolInterface &other) const;
 };
 
 #endif // __ThreadPoolInterface_H__
