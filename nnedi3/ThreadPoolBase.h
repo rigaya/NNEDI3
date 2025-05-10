@@ -50,9 +50,8 @@ protected:
     volatile uint8_t TotalThreadsRequested, CurrentThreadsAllocated, CurrentThreadsUsed;
     
     virtual void FreeThreadPool(void) = 0;
-    virtual void DestroyThreadPool(void) = 0;
     virtual void CreateThreadPool(uint8_t offset_core, uint8_t offset_ht, bool UseMaxPhysCore, bool SetAffinity, bool sleep) = 0;
-    virtual void Get_CPU_Info(Arch_CPU& cpu) = 0;
+    virtual void Get_CPU_Info(Arch_CPU& cpu) { cpu = Arch_CPU(); };
 
 private:
     ThreadPoolBase(const ThreadPoolBase &other);

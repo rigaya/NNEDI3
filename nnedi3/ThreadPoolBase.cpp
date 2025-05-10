@@ -21,7 +21,6 @@ ThreadPoolBase::ThreadPoolBase(void): Status_Ok(true)
 
 ThreadPoolBase::~ThreadPoolBase()
 {
-    DestroyThreadPool();
 }
 
 uint8_t ThreadPoolBase::GetThreadNumber(uint8_t thread_number, bool logical)

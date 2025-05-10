@@ -19,7 +19,7 @@ public:
     virtual bool GetMutex(void) override;
     virtual void FreeMutex(void) override;
     virtual bool CreatePoolEvent(uint8_t num) override;
-    virtual void FreeData(void) override;
+    virtual void FreeData(void);
     virtual void FreePool(void) override;
     virtual void FreePool(int8_t nPool) override;
 

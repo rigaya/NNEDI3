@@ -23,7 +23,7 @@ public:
 
 protected:
     virtual void FreeThreadPool(void) override;
-    virtual void DestroyThreadPool(void) override;
+    virtual void DestroyThreadPool(void);
     virtual void CreateThreadPool(uint8_t offset_core, uint8_t offset_ht, bool UseMaxPhysCore, bool SetAffinity, bool sleep) override;
     virtual void Get_CPU_Info(Arch_CPU& cpu) override;
 

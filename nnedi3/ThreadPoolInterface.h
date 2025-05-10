@@ -80,7 +80,6 @@ protected:
 	virtual bool GetMutex(void) = 0;
 	virtual void FreeMutex(void) = 0;
 	virtual bool CreatePoolEvent(uint8_t num) = 0;
-	virtual void FreeData(void) = 0;
 	virtual void FreePool(void) = 0;
 	virtual void FreePool(int8_t nPool) = 0;
 	

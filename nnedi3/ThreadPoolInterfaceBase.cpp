@@ -38,9 +38,7 @@ ThreadPoolInterfaceBase::ThreadPoolInterfaceBase(void): Status_Ok(false), NbrePo
 }
 
 ThreadPoolInterfaceBase::~ThreadPoolInterfaceBase(void)
-{
-    FreeData();
-    
+{   
     delete[] TabId;
     delete[] ThreadPoolRequested;
     delete[] JobsRunning;
