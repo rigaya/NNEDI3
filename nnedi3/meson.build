@@ -8,6 +8,10 @@ nnedi3_sources = [
   'nnedi3_kernel.cu',
 ]
 
+nnedi3_avx2_sources = [
+  'nnedi3_intrinsic_FMA_x64.cpp'
+]
+
 nnedi3_headers = [
   'internal.h',
   'knnedi_version.h',
@@ -37,10 +41,22 @@ if not (host_machine.system() == 'windows')
   )
 endif
 
+# AVX2用のstatic_libraryを作成
+nnedi3_avx2_lib = static_library('nnedi3_avx2',
+  nnedi3_avx2_sources,
+  include_directories : include_directories('../..', '../../KUtil',  '../../common'),
+  cpp_args : avx2_args,
+  name_prefix : '',
+)
+
+nnedi3_avx2_dep = declare_dependency(
+  link_with: nnedi3_avx2_lib,
+)
+
 shared_module('nnedi3',
   nnedi3_sources,
   include_directories : include_directories('../..', '../../KUtil',  '../../common'),
-  dependencies : [avisynth_dep, cuda_dep, threads_dep] + (not (host_machine.system() == 'windows') ? [binary1_dep] : []),
+  dependencies : [avisynth_dep, cuda_dep, threads_dep, nnedi3_avx2_dep] + (not (host_machine.system() == 'windows') ? [binary1_dep] : []),
   cpp_args : cpp_args,
   cuda_args : cuda_args,
   link_args : link_args,
