@@ -54,7 +54,7 @@ nnedi3_avx2_dep = declare_dependency(
 shared_module('nnedi3',
   nnedi3_sources,
   include_directories : include_directories('../..', '../../KUtil',  '../../common'),
-  dependencies : [avisynth_dep, cuda_dep, threads_dep, nnedi3_avx2_dep] + (not (host_machine.system() == 'windows') ? [binary1_dep] : []),
+  dependencies : [avisynth_dep, common_dep, cuda_dep, threads_dep, nnedi3_avx2_dep] + (not (host_machine.system() == 'windows') ? [binary1_dep] : []),
   cpp_args : cpp_args,
   cuda_args : cuda_args,
   link_args : link_args,
