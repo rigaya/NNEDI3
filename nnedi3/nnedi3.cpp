@@ -132,7 +132,7 @@ EXTERN_C IMAGE_DOS_HEADER __ImageBase;
 #define myalignedfree(ptr) if (ptr!=NULL) { _aligned_free(ptr); ptr=NULL;}
 #define mydelete(ptr) if (ptr!=NULL) { delete ptr; ptr=NULL;}
 
-static ThreadPoolInterfaceBase *poolInterface;
+static ThreadPoolInterface *poolInterface;
 
 #include "CommonFunctions.h"
 
@@ -4716,7 +4716,7 @@ extern "C" __declspec(dllexport) const char* __stdcall AvisynthPluginInit3(IScri
 {
 	AVS_linkage = vectors;
 
-	poolInterface=ThreadPoolInterfaceBase::Init(0);
+	poolInterface=ThreadPoolInterface::Init(0);
 
 	if (!poolInterface->GetThreadPoolInterfaceStatus()) env->ThrowError("nnedi3: Error with the TheadPool status!");
 

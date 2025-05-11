@@ -1,18 +1,28 @@
-﻿// ThreadPoolDLL.cpp: d馭init les fonctions export馥s pour l'application DLL.
+﻿// ThreadPoolDLL.cpp
 //
 
 #include "ThreadPool.h"
+#include <thread>
 
+#if defined(_WIN32) || defined(_WIN64)
 #define myfree(ptr) if (ptr!=NULL) { free(ptr); ptr=NULL;}
 #define myCloseHandle(ptr) if (ptr!=NULL) { CloseHandle(ptr); ptr=NULL;}
+#else
+#include <cstring>
+#include <cstdio>
+#include <utility>
+#include <vector>
+#define myfree(ptr) if (ptr!=NULL) { free(ptr); ptr=NULL;}
+#define myCloseHandle(ptr) if (ptr!=NULL) { CloseEvent(ptr); ptr=NULL;}
+#endif
 
 
 // Helper function to count set bits in the processor mask.
-static uint8_t CountSetBits(ULONG_PTR bitMask)
+static uint8_t CountSetBits(uintptr_t bitMask)
 {
-    DWORD LSHIFT = sizeof(ULONG_PTR)*8 - 1;
+    DWORD LSHIFT = sizeof(uintptr_t)*8 - 1;
     uint8_t bitSetCount = 0;
-    ULONG_PTR bitTest = (ULONG_PTR)1 << LSHIFT;    
+    uintptr_t bitTest = (uintptr_t)1 << LSHIFT;    
     DWORD i;
     
     for (i = 0; i <= LSHIFT; ++i)
@@ -25,6 +35,7 @@ static uint8_t CountSetBits(ULONG_PTR bitMask)
 }
 
 
+#if defined(_WIN32) || defined(_WIN64)
 static void Get_CPU_Info(Arch_CPU& cpu)
 {
     bool done = false;
@@ -84,13 +95,124 @@ static void Get_CPU_Info(Arch_CPU& cpu)
 	cpu.NbPhysCore=processorCoreCount;
 	cpu.NbLogicCPU=logicalProcessorCount;
 }
-
-
-static ULONG_PTR GetCPUMask(ULONG_PTR bitMask, uint8_t CPU_Nb)
+#else
+static void Get_CPU_Info(Arch_CPU& cpu)
 {
-    uint8_t LSHIFT=sizeof(ULONG_PTR)*8-1;
+    cpu.NbLogicCPU = 0;
+    cpu.NbPhysCore = 0;
+    cpu.FullMask = 0;
+
+    FILE* fp = fopen("/proc/cpuinfo", "r");
+    if (fp == NULL) return;
+
+    // Linux での処理
+    char line[256];
+    int physicalId = -1;
+    int coreId = -1;
+    int processor = -1;
+    std::vector<int> uniquePhysicalIds;
+    std::vector<std::pair<int, int>> coreInfo; // physical_id, core_id のペア
+
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        if (strncmp(line, "processor", 9) == 0) {
+            sscanf(line, "processor\t: %d", &processor);
+        } else if (strncmp(line, "physical id", 11) == 0) {
+            sscanf(line, "physical id\t: %d", &physicalId);
+        } else if (strncmp(line, "core id", 7) == 0) {
+            sscanf(line, "core id\t: %d", &coreId);
+        }
+
+        // 空行が来たら1つのCPUの情報が終わり
+        if (strlen(line) <= 1) {
+            if (processor >= 0 && physicalId >= 0 && coreId >= 0) {
+                // 論理プロセッサ数をカウント
+                cpu.NbLogicCPU++;
+
+                // ユニークな物理IDを記録
+                bool found = false;
+                for (size_t i = 0; i < uniquePhysicalIds.size(); i++) {
+                    if (uniquePhysicalIds[i] == physicalId) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    uniquePhysicalIds.push_back(physicalId);
+                }
+
+                // 物理ID+コアIDのペアを記録
+                coreInfo.push_back(std::make_pair(physicalId, coreId));
+
+                // マスクを設定
+                uintptr_t processorMask = (uintptr_t)1 << processor;
+                cpu.FullMask |= processorMask;
+
+                // 次のCPUのために変数をリセット
+                processor = -1;
+                physicalId = -1;
+                coreId = -1;
+            }
+        }
+    }
+    fclose(fp);
+
+    // 物理コア数を計算（ユニークな物理ID+コアIDの組み合わせ）
+    std::vector<std::pair<int, int>> uniqueCores;
+    for (size_t i = 0; i < coreInfo.size(); i++) {
+        bool found = false;
+        for (size_t j = 0; j < uniqueCores.size(); j++) {
+            if (uniqueCores[j].first == coreInfo[i].first && 
+                uniqueCores[j].second == coreInfo[i].second) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            uniqueCores.push_back(coreInfo[i]);
+        }
+    }
+    cpu.NbPhysCore = uniqueCores.size() > 0 ? (uint8_t)uniqueCores.size() : 1;
+
+    // 各物理コアごとのHT数とマスクを設定
+    for (uint8_t i = 0; i < cpu.NbPhysCore && i < 64; i++) {
+        if (i < uniqueCores.size()) {
+            int physId = uniqueCores[i].first;
+            int coreId = uniqueCores[i].second;
+            
+            // このコアに対応する論理プロセッサをカウント
+            uint8_t htCount = 0;
+            cpu.ProcMask[i] = 0;
+            
+            for (uint8_t j = 0; j < coreInfo.size(); j++) {
+                if (coreInfo[j].first == physId && coreInfo[j].second == coreId) {
+                    htCount++;
+                    // プロセッサマスクを論理IDに基づいて設定
+                    cpu.ProcMask[i] |= ((uintptr_t)1 << j);
+                }
+            }
+            cpu.NbHT[i] = htCount;
+        } else {
+            cpu.NbHT[i] = 0;
+            cpu.ProcMask[i] = 0;
+        }
+    }
+
+    // NbPhysCoreが0の場合はフォールバック
+    if (cpu.NbPhysCore == 0) {
+        cpu.NbPhysCore = 1;
+        cpu.NbLogicCPU = cpu.NbLogicCPU > 0 ? cpu.NbLogicCPU : 1;
+        cpu.NbHT[0] = cpu.NbLogicCPU;
+        cpu.ProcMask[0] = cpu.FullMask;
+    }
+}
+#endif
+
+
+static uintptr_t GetCPUMask(uintptr_t bitMask, uint8_t CPU_Nb)
+{
+    uint8_t LSHIFT=sizeof(uintptr_t)*8-1;
     uint8_t i=0,bitSetCount=0;
-    ULONG_PTR bitTest=1;    
+    uintptr_t bitTest=1;    
 
 	CPU_Nb++;
 	while (i<=LSHIFT)
@@ -107,11 +229,11 @@ static ULONG_PTR GetCPUMask(ULONG_PTR bitMask, uint8_t CPU_Nb)
 }
 
 
-static void CreateThreadsMasks(Arch_CPU cpu, ULONG_PTR *TabMask,uint8_t NbThread,uint8_t offset_core,uint8_t offset_ht,bool UseMaxPhysCore)
+static void CreateThreadsMasks(Arch_CPU cpu, uintptr_t *TabMask,uint8_t NbThread,uint8_t offset_core,uint8_t offset_ht,bool UseMaxPhysCore)
 {
 	if (NbThread==0) return;
 
-	memset(TabMask,0,NbThread*sizeof(ULONG_PTR));
+	memset(TabMask,0,NbThread*sizeof(uintptr_t));
 
 	if ((cpu.NbLogicCPU==0) || (cpu.NbPhysCore==0)) return;
 
@@ -179,24 +301,24 @@ static void CreateThreadsMasks(Arch_CPU cpu, ULONG_PTR *TabMask,uint8_t NbThread
 }
 
 
-DWORD WINAPI ThreadPool::StaticThreadpool(LPVOID lpParam )
+void ThreadPool::ThreadFunction(MT_Data_Thread *data)
 {
-	const MT_Data_Thread *data=(MT_Data_Thread *)lpParam;
-	
 	while (true)
 	{
-		WaitForSingleObject(data->nextJob,INFINITE);
+		WaitForSingleObject(data->nextJob, INFINITE);
 		switch(data->f_process)
 		{
-			case 1 :
-				if (data->MTData!=NULL)
+			case 1:
+				if (data->MTData != NULL)
 				{
-					data->MTData->thread_Id=data->thread_Id;
-					if (data->MTData->pFunc!=NULL) data->MTData->pFunc(data->MTData);
+					data->MTData->thread_Id = data->thread_Id;
+					if (data->MTData->pFunc != NULL) data->MTData->pFunc(data->MTData);
 				}
 				break;
-			case 255 : return(0); break;
-			default : break;
+			case 255:
+				return;
+			default:
+				break;
 		}
 		ResetEvent(data->nextJob);
 		SetEvent(data->jobFinished);
@@ -204,66 +326,70 @@ DWORD WINAPI ThreadPool::StaticThreadpool(LPVOID lpParam )
 }
 
 
-
-ThreadPool::ThreadPool(void): Status_Ok(true)
+ThreadPool::ThreadPool(void): MT_Thread(),
+  nextJob(),
+  jobFinished(),
+  threads(),
+  ThreadMask(),
+  ThreadSleep(),
+  Status_Ok(true),
+  TotalThreadsRequested(0),
+  CurrentThreadsAllocated(0),
+  CurrentThreadsUsed(0)
 {
-	int16_t i;
-
-	for (i=0; i<MAX_MT_THREADS; i++)
-	{
-		jobFinished[i]=NULL;
-		nextJob[i]=NULL;
-		MT_Thread[i].MTData=NULL;
-		MT_Thread[i].f_process=0;
-		MT_Thread[i].thread_Id=(uint8_t)i;
-		MT_Thread[i].jobFinished=NULL;
-		MT_Thread[i].nextJob=NULL;
-		thds[i]=NULL;
-		ThreadSleep[i]=true;
+	for (int i = 0; i < MAX_MT_THREADS; i++) {
+		nextJob.push_back(unique_event(nullptr, nullptr));
+		jobFinished.push_back(unique_event(nullptr, nullptr));
 	}
-	TotalThreadsRequested=0;
-	CurrentThreadsAllocated=0;
-	CurrentThreadsUsed=0;
+	for (int16_t i = 0; i < MAX_MT_THREADS; i++)
+	{
+		MT_Thread[i].MTData = NULL;
+		MT_Thread[i].f_process = 0;
+		MT_Thread[i].thread_Id = (uint8_t)i;
+		MT_Thread[i].jobFinished = NULL;
+		MT_Thread[i].nextJob = NULL;
+		ThreadSleep[i] = true;
+	}
+	TotalThreadsRequested = 0;
+	CurrentThreadsAllocated = 0;
+	CurrentThreadsUsed = 0;
 
 	Get_CPU_Info(CPU);
-	if ((CPU.NbLogicCPU==0) || (CPU.NbPhysCore==0)) Status_Ok=false;
+	if ((CPU.NbLogicCPU == 0) || (CPU.NbPhysCore == 0)) Status_Ok = false;
 }
-
 
 
 void ThreadPool::FreeThreadPool(void) 
 {
-	int16_t i;
-
-	if (TotalThreadsRequested>0)
+	if (TotalThreadsRequested > 0)
 	{
-		for (i=TotalThreadsRequested-1; i>=0; i--)
+		for (int16_t i = TotalThreadsRequested - 1; i >= 0; i--)
 		{
-			if (thds[i]!=NULL)
+			if (i < threads.size() && threads[i].joinable())
 			{
-				if (ThreadSleep[i]) ResumeThread(thds[i]);
-				MT_Thread[i].f_process=255;
-				SetEvent(nextJob[i]);
-				WaitForSingleObject(thds[i],INFINITE);
-				myCloseHandle(thds[i]);
-				MT_Thread[i].f_process=0;
-				MT_Thread[i].MTData=NULL;
-				MT_Thread[i].jobFinished=NULL;
-				MT_Thread[i].nextJob=NULL;
-				ThreadSleep[i]=true;
+				MT_Thread[i].f_process = 255;
+				SetEvent(nextJob[i].get());
+				threads[i].join();
+				MT_Thread[i].f_process = 0;
+				MT_Thread[i].MTData = NULL;
+				MT_Thread[i].jobFinished = NULL;
+				MT_Thread[i].nextJob = NULL;
+				ThreadSleep[i] = true;
 			}
 		}
 
-		for (i=TotalThreadsRequested-1; i>=0; i--)
+		threads.clear();
+
+		for (int16_t i = TotalThreadsRequested - 1; i >= 0; i--)
 		{
-			myCloseHandle(nextJob[i]);
-			myCloseHandle(jobFinished[i]);
+			nextJob[i].reset();
+			jobFinished[i].reset();
 		}
 	}
 
-	TotalThreadsRequested=0;
-	CurrentThreadsAllocated=0;
-	CurrentThreadsUsed=0;
+	TotalThreadsRequested = 0;
+	CurrentThreadsAllocated = 0;
+	CurrentThreadsUsed = 0;
 }
 
 
@@ -281,23 +407,21 @@ an "unload DLL" stage.
 
 void ThreadPool::DestroyThreadPool(void) 
 {
-	int16_t i;
-
-	if (TotalThreadsRequested>0)
+	if (TotalThreadsRequested > 0)
 	{
-		for (i=TotalThreadsRequested-1; i>=0; i--)
+		for (auto& thread : threads)
 		{
-			if (thds[i]!=NULL)
+			if (thread.joinable())
 			{
-				TerminateThread(thds[i],0);
-				myCloseHandle(thds[i]);
+				thread.detach();
 			}
 		}
+		threads.clear();
 
-		for (i=TotalThreadsRequested-1; i>=0; i--)
+		for (int16_t i = TotalThreadsRequested - 1; i >= 0; i--)
 		{
-			myCloseHandle(nextJob[i]);
-			myCloseHandle(jobFinished[i]);
+			nextJob[i].reset();
+			jobFinished[i].reset();
 		}
 	}
 }
@@ -350,87 +474,91 @@ bool ThreadPool::DeAllocateThreads(void)
 }
 
 
-
-void ThreadPool::CreateThreadPool(uint8_t offset_core,uint8_t offset_ht,bool UseMaxPhysCore,bool SetAffinity,bool sleep)
+void ThreadPool::CreateThreadPool(uint8_t offset_core, uint8_t offset_ht, bool UseMaxPhysCore, bool SetAffinity, bool sleep)
 {
-	int16_t i;
-
-	for(i=0; i<CurrentThreadsAllocated; i++)
+	// 既存のスレッドを停止
+	for (size_t i = 0; i < threads.size(); i++)
 	{
-		SuspendThread(thds[i]);
-		ThreadSleep[i]=true;
+		ThreadSleep[i] = true;
 	}
 
-	CreateThreadsMasks(CPU,ThreadMask,TotalThreadsRequested,offset_core,offset_ht,UseMaxPhysCore);
+	CreateThreadsMasks(CPU, ThreadMask, TotalThreadsRequested, offset_core, offset_ht, UseMaxPhysCore);
 
-	for(i=0; i<CurrentThreadsAllocated; i++)
+	// 既存のスレッドのアフィニティを設定
+	for (size_t i = 0; i < threads.size(); i++)
 	{
-		if (SetAffinity) SetThreadAffinityMask(thds[i],ThreadMask[i]);
-		else SetThreadAffinityMask(thds[i],CPU.FullMask);
-		if (!sleep)
+		if (SetAffinity)
 		{
-			ResumeThread(thds[i]);
-			ThreadSleep[i]=false;
+			SetThreadAffinityMask(threads[i].native_handle(), ThreadMask[i]);
+		}
+		else
+		{
+			SetThreadAffinityMask(threads[i].native_handle(), CPU.FullMask);
 		}
 	}
 
-	if (CurrentThreadsAllocated==TotalThreadsRequested) return;
+	if (CurrentThreadsAllocated == TotalThreadsRequested) return;
 
-	i=CurrentThreadsAllocated;
-	while ((i<TotalThreadsRequested) && Status_Ok)
+	// 新しいスレッドを作成
+	size_t i = CurrentThreadsAllocated;
+	while ((i < TotalThreadsRequested) && Status_Ok)
 	{
-		jobFinished[i]=CreateEvent(NULL,TRUE,TRUE,NULL);
-		nextJob[i]=CreateEvent(NULL,TRUE,FALSE,NULL);
-		MT_Thread[i].jobFinished=jobFinished[i];
-		MT_Thread[i].nextJob=nextJob[i];
-		Status_Ok=Status_Ok && ((MT_Thread[i].jobFinished!=NULL) && (MT_Thread[i].nextJob!=NULL));
+		jobFinished[i] = CreateEventUnique(NULL, TRUE, TRUE);
+		nextJob[i] = CreateEventUnique(NULL, TRUE, FALSE);
+		MT_Thread[i].jobFinished = jobFinished[i].get();
+		MT_Thread[i].nextJob = nextJob[i].get();
+		Status_Ok = Status_Ok && (jobFinished[i] && nextJob[i]);
 		i++;
 	}
+
 	if (!Status_Ok)
 	{
 		FreeThreadPool();
 		return;
 	}
 
-	i=CurrentThreadsAllocated;
-	while ((i<TotalThreadsRequested) && Status_Ok)
+	i = CurrentThreadsAllocated;
+	while ((i < TotalThreadsRequested) && Status_Ok)
 	{
-		thds[i]=CreateThread(NULL,0,(LPTHREAD_START_ROUTINE)StaticThreadpool,&MT_Thread[i],CREATE_SUSPENDED,&tids[i]);
-		Status_Ok=Status_Ok && (thds[i]!=NULL);
+		threads.emplace_back(ThreadFunction, &MT_Thread[i]);
+		Status_Ok = Status_Ok && threads.back().joinable();
+		
 		if (Status_Ok)
 		{
-			if (SetAffinity) SetThreadAffinityMask(thds[i],ThreadMask[i]);
-			else SetThreadAffinityMask(thds[i],CPU.FullMask);
-			if (!sleep)
+			if (SetAffinity)
 			{
-				ResumeThread(thds[i]);
-				ThreadSleep[i]=false;
+				SetThreadAffinityMask(threads.back().native_handle(), ThreadMask[i]);
+			}
+			else
+			{
+				SetThreadAffinityMask(threads.back().native_handle(), CPU.FullMask);
 			}
 		}
 		i++;
 	}
 
-	if (!Status_Ok) FreeThreadPool();
-	else CurrentThreadsAllocated=TotalThreadsRequested;
+	if (!Status_Ok)
+	{
+		FreeThreadPool();
+	}
+	else
+	{
+		CurrentThreadsAllocated = TotalThreadsRequested;
+	}
 }
 
 
-
-bool ThreadPool::RequestThreadPool(uint8_t thread_number,Public_MT_Data_Thread *Data)
+bool ThreadPool::RequestThreadPool(uint8_t thread_number, Public_MT_Data_Thread *Data)
 {
-	if ((!Status_Ok) || (thread_number>CurrentThreadsAllocated)) return(false);
+	if ((!Status_Ok) || (thread_number > CurrentThreadsAllocated)) return(false);
 	
-	for(uint8_t i=0; i<thread_number; i++)
+	for(uint8_t i = 0; i < thread_number; i++)
 	{
-		MT_Thread[i].MTData=Data+i;
-		if (ThreadSleep[i])
-		{
-			ResumeThread(thds[i]);
-			ThreadSleep[i]=false;
-		}
+		MT_Thread[i].MTData = Data + i;
+		ThreadSleep[i] = false;
 	}
 	
-	CurrentThreadsUsed=thread_number;
+	CurrentThreadsUsed = thread_number;
 
 	return(true);	
 }
@@ -440,16 +568,15 @@ bool ThreadPool::ReleaseThreadPool(bool sleep)
 {
 	if (!Status_Ok) return(false);
 
-	for(uint8_t i=0; i<CurrentThreadsUsed; i++)
+	for(uint8_t i = 0; i < CurrentThreadsUsed; i++)
 	{
 		if (sleep)
 		{
-			SuspendThread(thds[i]);
-			ThreadSleep[i]=true;
+			ThreadSleep[i] = true;
 		}
-		MT_Thread[i].MTData=NULL;
+		MT_Thread[i].MTData = NULL;
 	}
-	CurrentThreadsUsed=0;
+	CurrentThreadsUsed = 0;
 
 	return(true);
 }
@@ -457,13 +584,13 @@ bool ThreadPool::ReleaseThreadPool(bool sleep)
 
 bool ThreadPool::StartThreads(void)
 {
-	if ((!Status_Ok) || (CurrentThreadsUsed==0)) return(false);
+	if ((!Status_Ok) || (CurrentThreadsUsed == 0)) return(false);
 
-	for(uint8_t i=0; i<CurrentThreadsUsed; i++)
+	for(uint8_t i = 0; i < CurrentThreadsUsed; i++)
 	{
-		MT_Thread[i].f_process=1;
-		ResetEvent(jobFinished[i]);
-		SetEvent(nextJob[i]);
+		MT_Thread[i].f_process = 1;
+		ResetEvent(jobFinished[i].get());
+		SetEvent(nextJob[i].get());
 	}
 
 	return(true);	
@@ -472,12 +599,16 @@ bool ThreadPool::StartThreads(void)
 
 bool ThreadPool::WaitThreadsEnd(void)
 {
-	if ((!Status_Ok) || (CurrentThreadsUsed==0)) return(false);
+	if ((!Status_Ok) || (CurrentThreadsUsed == 0)) return(false);
 
-	WaitForMultipleObjects(CurrentThreadsUsed,jobFinished,TRUE,INFINITE);
+	HANDLE handles[MAX_MT_THREADS];
+	for (uint8_t i = 0; i < CurrentThreadsUsed; i++) {
+		handles[i] = jobFinished[i].get();
+	}
+	WaitForMultipleObjects(CurrentThreadsUsed, handles, TRUE, INFINITE);
 
-	for(uint8_t i=0; i<CurrentThreadsUsed; i++)
-		MT_Thread[i].f_process=0;
+	for(uint8_t i = 0; i < CurrentThreadsUsed; i++)
+		MT_Thread[i].f_process = 0;
 
 	return(true);
 }

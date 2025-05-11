@@ -1,10 +1,8 @@
 nnedi3_sources = [
   'nnedi3.cpp',
   'PlanarFrame.cpp',
-  'ThreadPoolBase.cpp',
-  'ThreadPoolLinux.cpp',
-  'ThreadPoolInterfaceBase.cpp',
-  'ThreadPoolInterfaceLinux.cpp',
+  'ThreadPool.cpp',
+  'ThreadPoolInterface.cpp',
   'nnedi3_kernel.cu',
 ]
 
