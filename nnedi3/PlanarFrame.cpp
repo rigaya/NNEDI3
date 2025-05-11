@@ -47,7 +47,9 @@ extern "C" void conv422toYUY2_AVX(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *d
 
 #define IS_BIT_SET(bitfield, bit) ((bitfield) & (1<<(bit)) ? true : false)
 
-#if !defined(_WIN32) && !defined(_WIN64)
+#if (defined(_WIN32) || defined(_WIN64))
+#define __xgetbv__ _xgetbv
+#else
 // Linux—p‚ÌcpuidŽÀ‘•
 static void __cpuid(int cpuinfo[4], int leaf) {
   __asm__ __volatile__ (

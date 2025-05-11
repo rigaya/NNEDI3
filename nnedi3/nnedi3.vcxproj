@@ -567,6 +567,11 @@
   <ItemGroup>
     <CudaCompile Include="nnedi3_kernel.cu" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\common\KCommon.vcxproj">
+      <Project>{a8605555-48e9-4c78-ba01-ddb4ff9f4ed2}</Project>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />

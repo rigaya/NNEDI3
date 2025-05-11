@@ -47,7 +47,7 @@
 
 
 #include "avisynth.h"
-
+#include <string.h>
 
 
 int RGB2YUV(int rgb);
