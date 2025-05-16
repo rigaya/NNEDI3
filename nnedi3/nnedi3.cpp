@@ -30,7 +30,7 @@
 #else
 #define SSE2_ASM_AVAILABLE 0
 #define AVX_ASM_AVAILABLE 0
-#define AVX2_ASM_AVAILABLE 1
+#define AVX2_ASM_AVAILABLE 0
 #endif
 
 #if AVX2_ASM_AVAILABLE
