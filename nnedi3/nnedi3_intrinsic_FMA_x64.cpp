@@ -124,11 +124,11 @@ alignas(32) static const __m256i uw_16_m256i = _mm256_set1_epi16(16);
 
 
 
-// computeNetwork0_FMA3 proc input:dword,weights:dword,ptr_d:dword
+// computeNetwork0_AVX2 proc input:dword,weights:dword,ptr_d:dword
 // input = rcx
 // weights = rdx
 // ptr_d = r8
-extern "C" void computeNetwork0_FMA3(const float *input, const float *weights, uint8_t *ptr_d) {
+extern "C" void computeNetwork0_AVX2(const float *input, const float *weights, uint8_t *ptr_d) {
     // sub rsp,32
     // .allocstack 32
     // vmovdqu XMMWORD ptr[rsp],xmm6
@@ -847,7 +847,7 @@ extern "C" void uc2f48_AVX2_16(const int16_t* ptr_t, int pitch, float* ptr_p) {
     // .endprolog
 
     // mov rax,rcx
-    const int16_t* rax = ptr_t;
+    const uint8_t* rax = (uint8_t *)ptr_t;
     // movsxd rcx,edx
     int64_t rcx = pitch;
     // vpxor ymm4,ymm4,ymm4
@@ -1143,7 +1143,7 @@ extern "C" void uc2s64_AVX2(const uint8_t* ptr_t, int pitch, int16_t* ptr_p) {
     _mm256_zeroupper();
 }
 
-extern "C" void dotProd_m32_m16_FMA3(
+extern "C" void dotProd_m32_m16_AVX2(
     char* data_,    // rcx
     char* weights,  // rdx
     char* vals,     // r8
@@ -1290,7 +1290,7 @@ extern "C" void dotProd_m32_m16_FMA3(
 }
 
 // 元のアセンブラ関数の引数:
-// dotProd_m48_m16_FMA3 proc data_:dword,weights:dword,vals:dword,n:dword,len:dword,istd:dword
+// dotProd_m48_m16_AVX2 proc data_:dword,weights:dword,vals:dword,n:dword,len:dword,istd:dword
 // data_ = rcx
 // weights = rdx
 // vals = r8
@@ -1298,7 +1298,7 @@ extern "C" void dotProd_m32_m16_FMA3(
 // len = [rbp+48]
 // istd = [rbp+56]
 
-extern "C" void dotProd_m48_m16_FMA3(
+extern "C" void dotProd_m48_m16_AVX2(
     char* data_,    // rcx
     char* weights,  // rdx
     char* vals,     // r8
@@ -1886,11 +1886,11 @@ extern "C" void dotProd_m48_m16_i16_AVX2(
 }
 
 // 元のアセンブラ関数の引数:
-// e0_m16_FMA3 proc ptr_s:dword,n:dword
+// e0_m16_AVX2 proc ptr_s:dword,n:dword
 // ptr_s = rcx
 // n = edx
 
-extern "C" void e0_m16_FMA3(
+extern "C" void e0_m16_AVX2(
     char* ptr_s,    // rcx
     int n           // edx
 ) {
@@ -2532,12 +2532,12 @@ extern "C" int processLine0_AVX2_ASM_32(
 }
 
 // 元のアセンブラ関数の引数:
-// weightedAvgElliottMul5_m16_FMA3 proc ptr_w:dword,n:dword,mstd:dword
+// weightedAvgElliottMul5_m16_AVX2 proc ptr_w:dword,n:dword,mstd:dword
 // ptr_w = rcx
 // n = edx
 // mstd = r8
 
-extern "C" void weightedAvgElliottMul5_m16_FMA3(
+extern "C" void weightedAvgElliottMul5_m16_AVX2(
     char* ptr_w,    // rcx
     int n,          // edx
     char* mstd      // r8
@@ -2655,7 +2655,7 @@ extern "C" void weightedAvgElliottMul5_m16_FMA3(
 }
 
 // 元のアセンブラ関数の引数:
-// extract_m8_FMA3 proc srcp:dword,stride:dword,xdia:dword,ydia:dword,mstd:dword,input:dword
+// extract_m8_AVX2 proc srcp:dword,stride:dword,xdia:dword,ydia:dword,mstd:dword,input:dword
 // srcp = rcx
 // stride = edx
 // xdia = r8d
@@ -2663,7 +2663,7 @@ extern "C" void weightedAvgElliottMul5_m16_FMA3(
 // mstd = [rbp+48]
 // input = [rbp+56]
 
-extern "C" void extract_m8_FMA3(
+extern "C" void extract_m8_AVX2(
     char* srcp,     // rcx
     int stride,     // edx
     int xdia,       // r8d
@@ -3406,7 +3406,7 @@ void extract_m8_i16_AVX2_16_2(
     _mm256_zeroupper();
 }
 
-extern "C" void extract_m8_FMA3_16(
+extern "C" void extract_m8_AVX2_16(
     char* srcp,     // rcx
     int stride,     // edx
     int xdia,       // r8d
@@ -3532,7 +3532,7 @@ extern "C" void extract_m8_FMA3_16(
     }
 }
 
-extern "C" void extract_m8_FMA3_32(
+extern "C" void extract_m8_AVX2_32(
     char* srcp,     // rcx
     int stride,     // edx
     int xdia,       // r8d
