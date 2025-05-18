@@ -197,8 +197,8 @@ extern "C" void extract_m8_AVX2_32(const uint8_t *srcp, const int stride, const 
 EXTERN_C IMAGE_DOS_HEADER __ImageBase;
 #else
 extern "C" {
-extern char _binary____NNEDI3_nnedi3_binary1_bin_start[];
-extern char _binary____NNEDI3_nnedi3_binary1_bin_end[];
+extern char _binary____nnedi3_binary1_bin_start[];
+extern char _binary____nnedi3_binary1_bin_end[];
 }
 #endif
 
@@ -568,7 +568,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 	float *bdata = (float *)lplock;
 #else
-	float *bdata = (float *)_binary____NNEDI3_nnedi3_binary1_bin_start;
+	float *bdata = (float *)_binary____nnedi3_binary1_bin_start;
 #endif
 
 	// Adjust prescreener weights
