@@ -1705,74 +1705,38 @@ void evalFunc_1(void *ps)
 	{
 		if (int16_prescreener) // int16 dot products
 		{
-			if (opt==1) uc2s=uc2s48_C;
-			else
-			{
-				if (opt>=5) uc2s=uc2s48_AVX2;
-				else
-				{
-					if (opt>=4) uc2s=uc2s48_AVX;
-					else uc2s=uc2s48_SSE2;
-				}
-			}
-			if (opt==1) computeNetwork0=computeNetwork0_i16_C;
-			else
-			{
-				if (opt>=5) computeNetwork0=computeNetwork0_i16_AVX2;
-				else
-				{
-					if (opt>=4) computeNetwork0=computeNetwork0_i16_AVX;
-					else computeNetwork0=computeNetwork0_i16_SSE2;
-				}
-			}
+			uc2s=uc2s48_C;
+			if      (opt>=5) uc2s=uc2s48_AVX2;
+			else if (opt>=4) uc2s=uc2s48_AVX;
+			else if (opt>1)  uc2s=uc2s48_SSE2;
+			computeNetwork0=computeNetwork0_i16_C;
+			if      (opt>=5) computeNetwork0=computeNetwork0_i16_AVX2;
+			else if (opt>=4) computeNetwork0=computeNetwork0_i16_AVX;
+			else if (opt>1)  computeNetwork0=computeNetwork0_i16_SSE2;
 		}
 		else
 		{
-			if (opt==1) uc2s=uc2f48_C;
-			else
-			{
-				if (opt>=5) uc2s=uc2f48_AVX2;
-				else
-				{
-					if (opt>=4) uc2s=uc2f48_AVX;
-					else uc2s=uc2f48_SSE2;
-				}
-			}
-			if (opt==1) computeNetwork0=computeNetwork0_C;
-			else
-			{
-				if (opt==6) computeNetwork0=computeNetwork0_AVX2;
-				else
-				{
-					if (opt>=4) computeNetwork0=computeNetwork0_AVX;
-					else computeNetwork0=computeNetwork0_SSE2;
-				}
-			}
+			uc2s=uc2f48_C;
+			if      (opt>=5) uc2s=uc2f48_AVX2;
+			else if (opt>=4) uc2s=uc2f48_AVX;
+			else if (opt>1)  uc2s=uc2f48_SSE2;
+			computeNetwork0=computeNetwork0_C;
+			if      (opt==6) computeNetwork0=computeNetwork0_AVX2;
+			else if (opt>=4) computeNetwork0=computeNetwork0_AVX;
+			else if (opt>1)  computeNetwork0=computeNetwork0_SSE2;
 		}
 	}
 	else // new prescreener
 	{
 		// only int16 dot products
-		if (opt==1) uc2s=uc2s64_C;
-		else
-		{
-			if (opt>=5) uc2s=uc2s64_AVX2;
-			else
-			{
-				if (opt>=4) uc2s=uc2s64_AVX;
-				else uc2s=uc2s64_SSE2;
-			}
-		}
-		if (opt==1) computeNetwork0=computeNetwork0new_C;
-		else
-		{
-			if (opt>=5) computeNetwork0=computeNetwork0new_AVX2;
-			else
-			{
-				if (opt>=4) computeNetwork0=computeNetwork0new_AVX;
-				else computeNetwork0=computeNetwork0new_SSE2;
-			}
-		}
+		uc2s=uc2s64_C;
+		if      (opt>=5) uc2s=uc2s64_AVX2;
+		else if (opt>=4) uc2s=uc2s64_AVX;
+		else if (opt>1)  uc2s=uc2s64_SSE2;
+		computeNetwork0=computeNetwork0new_C;
+		if      (opt>=5) computeNetwork0=computeNetwork0new_AVX2;
+		else if (opt>=4) computeNetwork0=computeNetwork0new_AVX;
+		else if (opt>1)  computeNetwork0=computeNetwork0new_SSE2;
 	}
 
 	uint8_t b = pss->current_plane;
@@ -2335,27 +2299,15 @@ void evalFunc_1_32(void *ps)
 	void(*computeNetwork0)(const float*, const float*, uint8_t*);
 	int(*processLine0)(const uint8_t*, int, uint8_t*, const uint8_t*, const int);
 
-	if (opt==1) processLine0=processLine0_C_32;
-	else
-	{
-		if (opt>=5) processLine0=processLine0_AVX2_32;
-		else
-		{
-			if (opt>=4) processLine0=processLine0_AVX_32;
-			else processLine0=processLine0_SSE2_32;
-		}
-	}
+	processLine0=processLine0_C_32;
+	if      (opt>=5) processLine0=processLine0_AVX2_32;
+	else if (opt>=4) processLine0=processLine0_AVX_32;
+	else if (opt>1)  processLine0=processLine0_SSE2_32;
 
-	if (opt==1) computeNetwork0=computeNetwork0_C;
-	else
-	{
-		if (opt>=6) computeNetwork0=computeNetwork0_AVX2;
-		else
-		{
-			if (opt>=4) computeNetwork0=computeNetwork0_AVX;
-			else computeNetwork0=computeNetwork0_SSE2;
-		}
-	}
+	computeNetwork0=computeNetwork0_C;
+	if      (opt>=6) computeNetwork0=computeNetwork0_AVX2;
+	else if (opt>=4) computeNetwork0=computeNetwork0_AVX;
+	else if (opt>1)  computeNetwork0=computeNetwork0_SSE2;
 	uc2s=uc2f48_C_32;
 
 	uint8_t b = pss->current_plane;
@@ -2573,108 +2525,61 @@ void evalFunc_2(void *ps)
 	void (*expf)(float *,const int);
 	void (*wae5)(const float*,const int,float*);
 
-	if (opt==1) wae5=weightedAvgElliottMul5_m16_C;
-	else
-	{
-		if (opt>=6) wae5=weightedAvgElliottMul5_m16_AVX2;
-		else
-		{
-			if (opt>=4) wae5=weightedAvgElliottMul5_m16_AVX;
-			else wae5=weightedAvgElliottMul5_m16_SSE2;
-		}
-	}
+	wae5=weightedAvgElliottMul5_m16_C;
+	if      (opt>=6) wae5=weightedAvgElliottMul5_m16_AVX2;
+	else if (opt>=4) wae5=weightedAvgElliottMul5_m16_AVX;
+	else if (opt>1)  wae5=weightedAvgElliottMul5_m16_SSE2;
 
 	if (int16_predictor) // use int16 dot products
 	{
-		if (opt==1) extract=extract_m8_i16_C;
-		else
-		{
-			if (opt>=5) extract=extract_m8_i16_AVX2;
-			else
-			{
-				if (opt>=4) extract=extract_m8_i16_AVX;
-				else extract=extract_m8_i16_SSE2;
-			}
-		}
-		if (opt==1) dotProd=dotProdS_C;
-		else
-		{
-			if (opt>=5)
-				dotProd= ((asize%48)!=0) ? dotProd_m32_m16_i16_AVX2 : dotProd_m48_m16_i16_AVX2;
-			else
-			{
-				if (opt>=4)
-					dotProd= ((asize%48)!=0) ? dotProd_m32_m16_i16_AVX : dotProd_m48_m16_i16_AVX;
-				else
-					dotProd= ((asize%48)!=0) ? dotProd_m32_m16_i16_SSE2 : dotProd_m48_m16_i16_SSE2;
-			}
-		}
+		extract=extract_m8_i16_C;
+		if      (opt>=5) extract=extract_m8_i16_AVX2;
+		else if (opt>=4) extract=extract_m8_i16_AVX;
+		else if (opt>1)  extract=extract_m8_i16_SSE2;
+		dotProd=dotProdS_C;
+		if (opt>=5)
+			dotProd= ((asize%48)!=0) ? dotProd_m32_m16_i16_AVX2 : dotProd_m48_m16_i16_AVX2;
+		else if (opt>=4)
+			dotProd= ((asize%48)!=0) ? dotProd_m32_m16_i16_AVX : dotProd_m48_m16_i16_AVX;
+		else if (opt>1)
+			dotProd= ((asize%48)!=0) ? dotProd_m32_m16_i16_SSE2 : dotProd_m48_m16_i16_SSE2;
 	}
 	else // use float dot products
 	{
-		if (opt==1) extract=extract_m8_C;
-		else
-		{
-			if (opt>=6) extract=extract_m8_AVX2;
-			else
-			{
-				if (opt>=4) extract=extract_m8_AVX;
-				else extract=extract_m8_SSE2;
-			}
-		}
-		if (opt==1) dotProd=dotProd_C;
-		else
-		{
-			if (opt>=6)
-				dotProd = ((asize%48)!=0) ? dotProd_m32_m16_AVX2 : dotProd_m48_m16_AVX2;
-			else
-			{
-				if (opt>=4)
-					dotProd = ((asize%48)!=0) ? dotProd_m32_m16_AVX : dotProd_m48_m16_AVX;
-				else
-					dotProd = ((asize%48)!=0) ? dotProd_m32_m16_SSE2 : dotProd_m48_m16_SSE2;
-			}
-		}
+		extract=extract_m8_C;
+		if      (opt>=6) extract=extract_m8_AVX2;
+		else if (opt>=4) extract=extract_m8_AVX;
+		else if (opt>1)  extract=extract_m8_SSE2;
+		dotProd=dotProd_C;
+		if (opt>=6)
+			dotProd = ((asize%48)!=0) ? dotProd_m32_m16_AVX2 : dotProd_m48_m16_AVX2;
+		else if (opt>=4)
+			dotProd = ((asize%48)!=0) ? dotProd_m32_m16_AVX : dotProd_m48_m16_AVX;
+		else if (opt>1)
+			dotProd = ((asize%48)!=0) ? dotProd_m32_m16_SSE2 : dotProd_m48_m16_SSE2;
 	}
 
-	if ((fapprox&12)==0) // use slow exp
+	// expf関数の選択
+	if ((fapprox & 12)==0) // use slow exp
 	{
-		if (opt==1) expf=e2_m16_C;
-		else
-		{
-			if (opt>=5) expf=e2_m16_AVX2;
-			else
-			{
-				if (opt>=4) expf=e2_m16_AVX;
-				else expf=e2_m16_SSE2;
-			}
-		}
+		expf = e2_m16_C;
+		if      (opt >= 5) expf = e2_m16_AVX2;
+		else if (opt >= 4) expf = e2_m16_AVX;
+		else if (opt > 1)  expf = e2_m16_SSE2;
 	}
-	else if ((fapprox&12)==4) // use faster exp
+	else if ((fapprox & 12)==4) // use faster exp
 	{
-		if (opt==1) expf=e1_m16_C;
-		else
-		{
-			if (opt>=5) expf=e1_m16_AVX2;
-			else
-			{
-				if (opt>=4) expf=e1_m16_AVX;
-				else expf=e1_m16_SSE2;
-			}
-		}
+		expf = e1_m16_C;
+		if      (opt >= 5) expf = e1_m16_AVX2;
+		else if (opt >= 4) expf = e1_m16_AVX;
+		else if (opt > 1)  expf = e1_m16_SSE2;
 	}
 	else // use fastest exp
 	{
-		if (opt==1) expf=e0_m16_C;
-		else
-		{
-			if (opt>=6) expf=e0_m16_AVX2;
-			else
-			{
-				if (opt>=4) expf=e0_m16_AVX;
-				else expf=e0_m16_SSE2;
-			}
-		}
+		expf = e0_m16_C;
+		if      (opt >= 6) expf = e0_m16_AVX2;
+		else if (opt >= 4) expf = e0_m16_AVX;
+		else if (opt > 1)  expf = e0_m16_SSE2;
 	}
 
 	uint8_t b = pss->current_plane;
@@ -2956,125 +2861,67 @@ void evalFunc_2_16(void *ps)
 	void(*expf)(float *, const int);
 	void(*wae5)(const float*, const int, float*);
 
-	if (opt==1) wae5=weightedAvgElliottMul5_m16_C;
-	else
-	{
-		if (opt>=6) wae5=weightedAvgElliottMul5_m16_AVX2;
-		else
-		{
-			if (opt>=4) wae5=weightedAvgElliottMul5_m16_AVX;
-			else wae5=weightedAvgElliottMul5_m16_SSE2;
-		}
-	}
+	wae5=weightedAvgElliottMul5_m16_C;
+	if      (opt>=6) wae5=weightedAvgElliottMul5_m16_AVX2;
+	else if (opt>=4) wae5=weightedAvgElliottMul5_m16_AVX;
+	else if (opt>1)  wae5=weightedAvgElliottMul5_m16_SSE2;
 
 	if (int16_predictor) // use int16 dot products
 	{
-		if (opt>=5)
-		{
-			if (bits_per_pixel<=10) extract=extract_m8_i16_AVX2_16;
-			else extract=extract_m8_i16_C_16_4;
-		}
-		else
-		{
-			if (opt>=4)
-			{
-				if (bits_per_pixel<=10) extract=extract_m8_i16_AVX_16;
-				else extract=extract_m8_i16_C_16_3;
-			}
-			else
-			{
-				if (opt>=3)
-				{
-					if (bits_per_pixel<=10) extract=extract_m8_i16_SSE2_16;
-					else extract=extract_m8_i16_C_16_2;
-				}
-				else
-				{
-					if ((opt>=2) && (bits_per_pixel<=10)) extract=extract_m8_i16_SSE2_16;
-					else extract=extract_m8_i16_C_16;
-				}
-			}
+		extract = extract_m8_i16_C_16;
+		if (bits_per_pixel <= 10) {
+			if      (opt >= 5) extract = extract_m8_i16_AVX2_16;
+			else if (opt >= 4) extract = extract_m8_i16_AVX_16;
+			else if (opt >= 2) extract = extract_m8_i16_SSE2_16;
+		} else {
+			if      (opt >= 5) extract = extract_m8_i16_C_16_4;
+			else if (opt >= 4) extract = extract_m8_i16_C_16_3;
+			else if (opt >= 3) extract = extract_m8_i16_C_16_2;
 		}
 
-		if ((opt==1) || (bits_per_pixel>14)) dotProd=dotProdS_C_16;
-		else
-		{
-			if (opt>=5)
-				dotProd= ((asize%48)!=0) ? dotProd_m32_m16_i16_AVX2 : dotProd_m48_m16_i16_AVX2;
+		dotProd = dotProdS_C_16;
+		if ((opt > 1) && (bits_per_pixel <= 14)) {
+			if (opt >= 5)
+				dotProd = ((asize%48) != 0) ? dotProd_m32_m16_i16_AVX2 : dotProd_m48_m16_i16_AVX2;
+			else if (opt >= 4)
+				dotProd = ((asize%48) != 0) ? dotProd_m32_m16_i16_AVX : dotProd_m48_m16_i16_AVX;
 			else
-			{
-				if (opt>=4)
-					dotProd= ((asize%48)!=0) ? dotProd_m32_m16_i16_AVX : dotProd_m48_m16_i16_AVX;
-				else
-					dotProd= ((asize%48)!=0) ? dotProd_m32_m16_i16_SSE2 : dotProd_m48_m16_i16_SSE2;
-			}
+				dotProd = ((asize%48) != 0) ? dotProd_m32_m16_i16_SSE2 : dotProd_m48_m16_i16_SSE2;
 		}
 	}
 	else // use float dot products
 	{
-		if (opt==1) extract=extract_m8_C_16;
-		else
-		{
-			if (opt>=6) extract=extract_m8_AVX2;
-			else
-			{
-				if (opt>=4) extract=extract_m8_AVX;
-				else extract=extract_m8_SSE2;
-			}
-		}
-		if (opt==1) dotProd = dotProd_C;
-		else
-		{
-			if (opt>=6)
-				dotProd = ((asize%48)!=0) ? dotProd_m32_m16_AVX2 : dotProd_m48_m16_AVX2;
-			else
-			{
-				if (opt>=4)
-					dotProd = ((asize%48)!=0) ? dotProd_m32_m16_AVX : dotProd_m48_m16_AVX;
-				else
-					dotProd = ((asize%48)!=0) ? dotProd_m32_m16_SSE2 : dotProd_m48_m16_SSE2;
-			}
-		}
+		extract = extract_m8_C_16;
+		if      (opt >= 6) extract = extract_m8_AVX2;
+		else if (opt >= 4) extract = extract_m8_AVX;
+		else if (opt > 1)  extract = extract_m8_SSE2;
+
+		dotProd = dotProd_C;
+		if      (opt >= 6) dotProd = ((asize%48) != 0) ? dotProd_m32_m16_AVX2 : dotProd_m48_m16_AVX2;
+		else if (opt >= 4) dotProd = ((asize%48) != 0) ? dotProd_m32_m16_AVX : dotProd_m48_m16_AVX;
+		else if (opt > 1)  dotProd = ((asize%48) != 0) ? dotProd_m32_m16_SSE2 : dotProd_m48_m16_SSE2;
 	}
 
 	if ((fapprox & 12)==0) // use slow exp
 	{
-		if (opt==1) expf = e2_m16_C;
-		else
-		{
-			if (opt>=5) expf = e2_m16_AVX2;
-			else
-			{
-				if (opt>=4) expf = e2_m16_AVX;
-				else expf = e2_m16_SSE2;
-			}
-		}
+		expf = e2_m16_C;
+		if      (opt>=5) expf = e2_m16_AVX2;
+		else if (opt>=4) expf = e2_m16_AVX;
+		else if (opt>1)  expf = e2_m16_SSE2;
 	}
 	else if ((fapprox & 12)==4) // use faster exp
 	{
-		if (opt==1) expf = e1_m16_C;
-		else
-		{
-			if (opt>=5) expf = e1_m16_AVX2;
-			else
-			{
-				if (opt>=4) expf = e1_m16_AVX;
-				else expf = e1_m16_SSE2;
-			}
-		}
+		expf = e1_m16_C;
+		if      (opt>=5) expf = e1_m16_AVX2;
+		else if (opt>=4) expf = e1_m16_AVX;
+		else if (opt>1)  expf = e1_m16_SSE2;
 	}
 	else // use fastest exp
 	{
-		if (opt==1) expf=e0_m16_C;
-		else
-		{
-			if (opt>=6) expf=e0_m16_AVX2;
-			else
-			{
-				if (opt>=4) expf=e0_m16_AVX;
-				else expf=e0_m16_SSE2;
-			}
-		}
+		expf = e0_m16_C;
+		if      (opt>=6) expf = e0_m16_AVX2;
+		else if (opt>=4) expf = e0_m16_AVX;
+		else if (opt>1)  expf = e0_m16_SSE2;
 	}
 
 	uint8_t b = pss->current_plane;
@@ -3263,80 +3110,44 @@ void evalFunc_2_32(void *ps)
 	void(*expf)(float *, const int);
 	void(*wae5)(const float*, const int, float*);
 
-	if (opt==1) wae5=weightedAvgElliottMul5_m16_C;
-	else
-	{
-		if (opt>=6) wae5=weightedAvgElliottMul5_m16_AVX2;
-		else
-		{
-			if (opt>=4) wae5=weightedAvgElliottMul5_m16_AVX;
-			else wae5=weightedAvgElliottMul5_m16_SSE2;
-		}
-	}
+	wae5=weightedAvgElliottMul5_m16_C;
+	if      (opt>=6) wae5=weightedAvgElliottMul5_m16_AVX2;
+	else if (opt>=4) wae5=weightedAvgElliottMul5_m16_AVX;
+	else if (opt>1)  wae5=weightedAvgElliottMul5_m16_SSE2;
 
-	if (opt==1) extract=extract_m8_C_32;
-	else
-	{
-		if (opt>=6) extract=extract_m8_AVX2_32;
-		else
-		{
-			if (opt>=4) extract=extract_m8_AVX_32;
-			else extract=extract_m8_SSE2_32;
-		}
-	}
+	extract=extract_m8_C_32;
+	if      (opt>=6) extract=extract_m8_AVX2_32;
+	else if (opt>=4) extract=extract_m8_AVX_32;
+	else if (opt>1)  extract=extract_m8_SSE2_32;
 
-	if (opt==1) dotProd = dotProd_C;
-	else
-	{
-		if (opt>=6)
-			dotProd = ((asize%48)!=0) ? dotProd_m32_m16_AVX2 : dotProd_m48_m16_AVX2;
-		else
-		{
-			if (opt>=4)
-				dotProd = ((asize%48)!=0) ? dotProd_m32_m16_AVX : dotProd_m48_m16_AVX;
-			else
-				dotProd = ((asize%48)!=0) ? dotProd_m32_m16_SSE2 : dotProd_m48_m16_SSE2;
-		}
-	}
+	dotProd = dotProd_C;
+	if (opt>=6)
+		dotProd = ((asize%48)!=0) ? dotProd_m32_m16_AVX2 : dotProd_m48_m16_AVX2;
+	else if (opt>=4)
+		dotProd = ((asize%48)!=0) ? dotProd_m32_m16_AVX : dotProd_m48_m16_AVX;
+	else if (opt>1)
+		dotProd = ((asize%48)!=0) ? dotProd_m32_m16_SSE2 : dotProd_m48_m16_SSE2;
 
 	if ((fapprox & 12)==0) // use slow exp
 	{
-		if (opt==1) expf = e2_m16_C;
-		else
-		{
-			if (opt>=5) expf = e2_m16_AVX2;
-			else
-			{
-				if (opt>=4) expf = e2_m16_AVX;
-				else expf = e2_m16_SSE2;
-			}
-		}
+		expf = e2_m16_C;
+		if      (opt>=5) expf = e2_m16_AVX2;
+		else if (opt>=4) expf = e2_m16_AVX;
+		else if (opt>1)  expf = e2_m16_SSE2;
 	}
 	else if ((fapprox & 12)==4) // use faster exp
 	{
-		if (opt==1) expf = e1_m16_C;
-		else
-		{
-			if (opt>=5) expf = e1_m16_AVX2;
-			else
-			{
-				if (opt>=4) expf = e1_m16_AVX;
-				else expf = e1_m16_SSE2;
-			}
-		}
+		expf = e1_m16_C;
+		if      (opt>=5) expf = e1_m16_AVX2;
+		else if (opt>=4) expf = e1_m16_AVX;
+		else if (opt>1)  expf = e1_m16_SSE2;
 	}
 	else // use fastest exp
 	{
-		if (opt==1) expf=e0_m16_C;
-		else
-		{
-			if (opt>=6) expf=e0_m16_AVX2;
-			else
-			{
-				if (opt>=4) expf=e0_m16_AVX;
-				else expf=e0_m16_SSE2;
-			}
-		}
+		expf = e0_m16_C;
+		if      (opt>=6) expf = e0_m16_AVX2;
+		else if (opt>=4) expf = e0_m16_AVX;
+		else if (opt>1)  expf = e0_m16_SSE2;
 	}
 
 	uint8_t b = pss->current_plane;
