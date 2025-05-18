@@ -23,10 +23,11 @@
 #ifndef __ThreadPoolInterface_H__
 #define __ThreadPoolInterface_H__
 
-#include <windows.h>
 #include <vector>
+#include <mutex>
 
 #include "./ThreadPoolDef.h"
+#include "./compat/rgy_event.h"
 
 #define THREADPOOLINTERFACE_VERSION "ThreadPoolInterface 1.12.0"
 
@@ -135,12 +136,12 @@ class ThreadPoolInterface
 
 	ThreadPoolInterface(void);
 
-	CRITICAL_SECTION CriticalSection;
-	HANDLE ghMutexResources;
-	BOOL CSectionOk;
-	HANDLE JobsEnded[MAX_THREAD_POOL],ThreadPoolFree[MAX_THREAD_POOL];
+	std::mutex CriticalSection;
+	std::mutex ghMutexResources;
+	std::vector<unique_event> JobsEnded;
+	std::vector<unique_event> ThreadPoolFree;
 	std::vector<UserData> TabId;
-	HANDLE EndExclusive;
+	unique_event EndExclusive;
 	bool Error_Occured;
 
 	bool ThreadPoolRequested[MAX_THREAD_POOL],JobsRunning[MAX_THREAD_POOL];

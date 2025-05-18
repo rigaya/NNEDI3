@@ -24,7 +24,7 @@
 #ifndef __PlanarFrame_H__
 #define __PlanarFrame_H__
 
-#include <windows.h>
+#include "rgy_osdep.h"
 #include <malloc.h>
 #include <stdint.h>
 #include "./internal.h"

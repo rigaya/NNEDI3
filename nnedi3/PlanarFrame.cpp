@@ -23,7 +23,11 @@
 
 #include "./PlanarFrame.h"
 #include <stdint.h>
+#if defined(_WIN32) || defined(_WIN64)
 #include <intrin.h>
+#else
+#include <x86intrin.h>
+#endif
 
 #define myalignedfree(ptr) if (ptr!=NULL) { _aligned_free(ptr); ptr=NULL;}
 
@@ -42,6 +46,30 @@ extern "C" void conv422toYUY2_AVX(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *d
 
 
 #define IS_BIT_SET(bitfield, bit) ((bitfield) & (1<<(bit)) ? true : false)
+
+#if (defined(_WIN32) || defined(_WIN64))
+#define __xgetbv__ _xgetbv
+#else
+static void __cpuid(int cpuinfo[4], int leaf) {
+  __asm__ __volatile__ (
+    "cpuid"
+    : "=a"(cpuinfo[0]), "=b"(cpuinfo[1]), "=c"(cpuinfo[2]), "=d"(cpuinfo[3])
+    : "a"(leaf), "c"(0)
+  );
+}
+
+static unsigned long long __xgetbv__(unsigned int index) {
+  unsigned int eax, edx;
+  __asm__ __volatile__ (
+    "xgetbv"
+    : "=a"(eax), "=d"(edx)
+    : "c"(index)
+  );
+  return ((unsigned long long)edx << 32) | eax;
+}
+
+#define _XCR_XFEATURE_ENABLED_MASK 0
+#endif
 
 static int CPUCheckForExtensions()
 {
@@ -78,7 +106,7 @@ static int CPUCheckForExtensions()
   bool avx_supported = IS_BIT_SET(cpuinfo[2], 28);
   if (xgetbv_supported && avx_supported)
   {
-    unsigned long long xgetbv0 = _xgetbv(_XCR_XFEATURE_ENABLED_MASK);
+    unsigned long long xgetbv0 = __xgetbv__(_XCR_XFEATURE_ENABLED_MASK);
     if ((xgetbv0 & 0x6ull) == 0x6ull) {
       result |= CPUF_AVX;
       if (IS_BIT_SET(cpuinfo[2], 12))

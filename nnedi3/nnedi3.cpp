@@ -124,7 +124,15 @@ extern "C" void uc2s64_AVX(const uint8_t *t,const int pitch,float *p);
 extern "C" void computeNetwork0new_AVX(const float *datai,const float *weights,uint8_t *d);
 
 
+#if (defined(_WIN32) || defined(_WIN64))
 EXTERN_C IMAGE_DOS_HEADER __ImageBase;
+#else
+extern "C" {
+extern char _binary____NNEDI3_nnedi3_binary1_bin_start[];
+extern char _binary____NNEDI3_nnedi3_binary1_bin_end[];
+}
+#endif
+
 
 #define myfree(ptr) if (ptr!=NULL) { free(ptr); ptr=NULL;}
 #define myalignedfree(ptr) if (ptr!=NULL) { _aligned_free(ptr); ptr=NULL;}
@@ -135,8 +143,8 @@ static ThreadPoolInterface *poolInterface;
 int roundds(const double f)
 {
 	if (f-floor(f) >= 0.5)
-		return min((int)ceil(f),32767);
-	return max((int)floor(f),-32768);
+		return std::min((int)ceil(f),32767);
+	return std::max((int)floor(f),-32768);
 }
 
 void shufflePreScrnL2L3(float *wf, float *rf, const int opt)
@@ -426,9 +434,11 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 		}
 #endif
 
+#if (defined(_WIN32) || defined(_WIN64))
 		char buf[512];
 		sprintf_s(buf,512,"nnedi3: auto-detected opt setting = %d (%d)\n",opt,CPUF);
 		OutputDebugString(buf);
+#endif
 	}
 
 	const int dims0 = 49*4+5*4+9*4;
@@ -446,7 +456,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			dims1tsize+=(xdiaTable[i]*ydiaTable[i]+1) << j_a;
 		}
 	}
-	weights0 = (float *)_aligned_malloc(max(dims0,dims0new)*sizeof(float),64);
+	weights0 = (float *)_aligned_malloc(std::max(dims0,dims0new)*sizeof(float),64);
 	if (weights0==NULL)
 	{
 		FreeData();
@@ -473,6 +483,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			env->ThrowError("nnedi3: Error while allocating lcount[%d]!",i);
 		}
 	}
+#if defined(_WIN32) || defined(_WIN64)
 	char nbuf[512];
 	GetModuleFileName((HINSTANCE)&__ImageBase,nbuf,512);
 	HMODULE hmod = GetModuleHandle(nbuf);
@@ -495,6 +506,9 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 	}
 
 	float *bdata = (float *)lplock;
+#else
+	float *bdata = (float *)_binary____NNEDI3_nnedi3_binary1_bin_start;
+#endif
 
 	// Adjust prescreener weights
 	if (pscrn>=2) // using new prescreener
@@ -554,7 +568,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 		}
 
 		// 16 bit pixels will be shifted by 1 for the prescreener.
-		const int prescreener_bits = min((int)bits_per_pixel,15);
+		const int prescreener_bits = std::min((int)bits_per_pixel,15);
 		const double half = (((int)1 << prescreener_bits)-1)/2.0;
 
 		// Factor mean removal and 1.0/half scaling
@@ -565,7 +579,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			double mval = 0.0;
 
 			for (int k=0; k<64; k++)
-				mval = max(mval,fabs((bdw[offt[j_a+k]]-mean[j])/half));
+				mval = std::max(mval,fabs((bdw[offt[j_a+k]]-mean[j])/half));
 
 			const double scale = 32767.0/mval;
 
@@ -598,7 +612,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			float *wf = (float *)&ws[4*48];
 
 			// 16 bit pixels will be shifted by 1 for the prescreener.
-			const int prescreener_bits = min((int)bits_per_pixel,15);
+			const int prescreener_bits = std::min((int)bits_per_pixel,15);
 			const double half = (((int)1 << prescreener_bits)-1)/2.0;
 
 			// Factor mean removal and 1.0/half scaling
@@ -609,7 +623,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 				double mval = 0.0;
 
 				for (int k=0; k<48; k++)
-					mval = max(mval,fabs((bdata[j_a+k]-mean[j])/half));
+					mval = std::max(mval,fabs((bdata[j_a+k]-mean[j])/half));
 
 				const double scale = 32767.0/mval;
 
@@ -775,7 +789,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 				double mval = 0.0;
 
 				for (int k=0; k<asize; k++)
-					mval = max(mval,fabs(bdataT[j_a+k]-mean[j_d]-mean[k]));
+					mval = std::max(mval,fabs(bdataT[j_a+k]-mean[j_d]-mean[k]));
 
 				const double scale = 32767.0/mval;
 
@@ -793,7 +807,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 				double mval = 0.0;
 
 				for (int k=0; k<asize; k++)
-					mval = max(mval,fabs(bdataT[j_a+k]-mean[j_d]));
+					mval = std::max(mval,fabs(bdataT[j_a+k]-mean[j_d]));
 
 				const double scale = 32767.0/mval;
 
@@ -1528,7 +1542,7 @@ void computeNetwork0_C(const float *input, const float *weights, uint8_t *d)
 	elliott_C(temp+4,4);
 	dotProd_C(temp,weights+4*49+4*5,temp+8,4,8,&scale);
 
-	if (max(temp[10],temp[11])<=max(temp[8],temp[9])) d[0]=1;
+	if (std::max(temp[10],temp[11])<=std::max(temp[8],temp[9])) d[0]=1;
 	else d[0]=0;
 }
 
@@ -1548,7 +1562,7 @@ void computeNetwork0_i16_C(const float *inputf, const float *weightsf, uint8_t *
 	elliott_C(temp+4,4);
 	dotProd_C(temp,wf+8+4*5,temp+8,4,8,&scale);
 
-	if (max(temp[10],temp[11])<=max(temp[8],temp[9])) d[0]=1;
+	if (std::max(temp[10],temp[11])<=std::max(temp[8],temp[9])) d[0]=1;
 	else d[0]=0;
 }
 
@@ -2041,7 +2055,7 @@ void dotProdS_C_16(const float *dataf,const float *weightsf,float *vals,const in
 
 	for (int i=0; i<n; i++)
 	{
-		__int64 sum = 0;
+		int64_t sum = 0;
 		const int off = ((i>>2)<<3)+(i&3);
 
 		for (int j=0; j<len; j++)
@@ -2068,7 +2082,7 @@ void computeNetwork0_i16_C_16(const float *inputf, const float *weightsf, uint8_
 	elliott_C(temp+4,4);
 	dotProd_C(temp,wf+8+4*5,temp+8,4,8,&scale);
 
-	if (max(temp[10],temp[11]) <= max(temp[8],temp[9])) d[0]=1;
+	if (std::max(temp[10],temp[11]) <= std::max(temp[8],temp[9])) d[0]=1;
 	else d[0]=0;
 }
 
@@ -2082,7 +2096,7 @@ void computeNetwork0new_C_16(const float *datai, const float *weights, uint8_t *
 
 	for (int i=0; i<4; i++)
 	{
-		__int64 sum = 0;
+		int64_t sum = 0;
 		const int i_3 = i << 3;
 
 		for (int j=0; j<64; j++)
@@ -2669,26 +2683,26 @@ void e0_m16_C(float *s,const int n)
 {
 	for (int i=0; i<n; i++)
 	{
-		const int t = (int)(max(min(s[i],exp_hi[0]),exp_lo[0])*e0_mult[0]+e0_bias[0]);
+		const int t = (int)(std::max(std::min(s[i],exp_hi[0]),exp_lo[0])*e0_mult[0]+e0_bias[0]);
 		s[i] = (*((float*)&t));
 	}
 }
 
 // exp from Loren Merritt
 
-_declspec(align(16)) const float e1_scale[4] = { // 1/ln(2)
+alignas(16) const float e1_scale[4] = { // 1/ln(2)
 	1.4426950409f, 1.4426950409f, 1.4426950409f, 1.4426950409f };
-_declspec(align(16)) const float e1_bias[4] = { // 3<<22
+alignas(16) const float e1_bias[4] = { // 3<<22
 	12582912.0f, 12582912.0f, 12582912.0f, 12582912.0f };
-_declspec(align(16)) const float e1_c0[4] = { 1.00035f, 1.00035f, 1.00035f, 1.00035f };
-_declspec(align(16)) const float e1_c1[4] = { 0.701277797f, 0.701277797f, 0.701277797f, 0.701277797f };
-_declspec(align(16)) const float e1_c2[4] = { 0.237348593f, 0.237348593f, 0.237348593f, 0.237348593f };
+alignas(16) const float e1_c0[4] = { 1.00035f, 1.00035f, 1.00035f, 1.00035f };
+alignas(16) const float e1_c1[4] = { 0.701277797f, 0.701277797f, 0.701277797f, 0.701277797f };
+alignas(16) const float e1_c2[4] = { 0.237348593f, 0.237348593f, 0.237348593f, 0.237348593f };
 
 void e1_m16_C(float *s,const int n)
 {
 	for (int q=0; q<n; q++)
 	{
-		float x = max(min(s[q],exp_hi[0]),exp_lo[0])*e1_scale[0];
+		float x = std::max(std::min(s[q],exp_hi[0]),exp_lo[0])*e1_scale[0];
 		int i = (int)(x + 128.5f) - 128;
 		x -= i;
 		x = e1_c0[0] + e1_c1[0]*x + e1_c2[0]*x*x;
@@ -2700,7 +2714,7 @@ void e1_m16_C(float *s,const int n)
 void e2_m16_C(float *s,const int n)
 {
 	for (int i=0; i<n; i++)
-		s[i] = expf(max(min(s[i],exp_hi[0]),exp_lo[0]));
+		s[i] = expf(std::max(std::min(s[i],exp_hi[0]),exp_lo[0]));
 }
 
 
@@ -3015,7 +3029,7 @@ void evalFunc_2(void *ps)
 						expf(temp,nns);
 						wae5(temp,nns,mstd);
 					}
-					dstp[x]=min(max((int)(mstd[3]*scale+0.5f),val_min),val_max);
+					dstp[x]=std::min(std::max((int)(mstd[3]*scale+0.5f),val_min),val_max);
 				}
 				srcpp += src_pitch2;
 				dstp += dst_pitch2;
@@ -3537,7 +3551,7 @@ void evalFunc_2_16(void *ps)
 						expf(temp,nns);
 						wae5(temp,nns,mstd);
 					}
-					dst0[x]=min(max((int)(mstd[3]*scale+0.5f),val_min),val_max);
+					dst0[x]=std::min(std::max((int)(mstd[3]*scale+0.5f),val_min),val_max);
 				}
 				srcpp += src_pitch2;
 				dstp += dst_pitch2;
@@ -4488,14 +4502,14 @@ AVSValue __cdecl Create_nnedi3_rpow2(AVSValue args, void* user_data, IScriptEnvi
 					if (RGB64) v=env->Invoke("ConvertToRGB64",v).AsClip();
 				}
 			}
-			else if (((type!=3) && (type!=4)) || (min(ep0,ep1)==-FLT_MAX))
+			else if (((type!=3) && (type!=4)) || (std::min(ep0,ep1)==-FLT_MAX))
 			{
 				AVSValue sargs[16] = { v, fwidth, fheight, Y_hshift, Y_vshift, 
 					vi.width*rfactor, vi.height*rfactor, type==1?AVSValue((int)(ep0+0.5f)):
-					(type==2?ep0:max(ep0,ep1)),threads_rs,LogicalCores_rs,MaxPhysCores_rs,SetAffinity_rs,
+					(type==2?ep0:std::max(ep0,ep1)),threads_rs,LogicalCores_rs,MaxPhysCores_rs,SetAffinity_rs,
 					sleep,prefetch,range_mode,thread_level_rs };
 				const char *nargs[16] = { 0, 0, 0, "src_left", "src_top", 
-					"src_width", "src_height", type==1?"taps":(((type==2)||(type==4))?"p":(max(ep0,ep1)==ep0?"b":"c")),
+					"src_width", "src_height", type==1?"taps":(((type==2)||(type==4))?"p":(std::max(ep0,ep1)==ep0?"b":"c")),
 					"threads","logicalCores","MaxPhysCore","SetAffinity","sleep","prefetch","range","ThreadLevel" };
 				const uint8_t nbarg=(use_rs_mt) ? 15:8;
 

@@ -1,4 +1,4 @@
-/*
+﻿/*
  *  Threadpool
  *
  *  Create and manage a threadpool.

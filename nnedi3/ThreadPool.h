@@ -1,4 +1,4 @@
-/*
+﻿/*
  *  Threadpool
  *
  *  Create and manage a threadpool.
@@ -23,9 +23,12 @@
 #ifndef __ThreadPool_H__
 #define __ThreadPool_H__
 
-#include <windows.h>
+#include "rgy_osdep.h"
+#include "rgy_event.h"
+#include <thread>
+#include <vector>
 
-#include "./ThreadPoolDef.h"
+#include "ThreadPoolDef.h"
 
 #define THREADPOOL_VERSION "ThreadPool 1.4.4"
 
@@ -43,8 +46,8 @@ typedef struct _Arch_CPU
 {
 	uint8_t NbPhysCore,NbLogicCPU;
 	uint8_t NbHT[MAX_PHYSICAL_CORES];
-	ULONG_PTR ProcMask[MAX_PHYSICAL_CORES];
-	ULONG_PTR FullMask;
+	uintptr_t ProcMask[MAX_PHYSICAL_CORES];
+	uintptr_t FullMask;
 } Arch_CPU;
 
 
@@ -84,10 +87,9 @@ class ThreadPool
 	protected :
 
 	MT_Data_Thread MT_Thread[MAX_MT_THREADS];
-	HANDLE nextJob[MAX_MT_THREADS],jobFinished[MAX_MT_THREADS];
-	HANDLE thds[MAX_MT_THREADS];
-	DWORD tids[MAX_MT_THREADS];
-	ULONG_PTR ThreadMask[MAX_MT_THREADS];
+	std::vector<unique_event> nextJob, jobFinished;
+	std::vector<std::thread> threads;
+	uintptr_t ThreadMask[MAX_MT_THREADS];
 	bool ThreadSleep[MAX_MT_THREADS];
 	ThreadLevelName nPriority;
 
@@ -101,7 +103,7 @@ class ThreadPool
 
 	private :
 
-	static DWORD WINAPI StaticThreadpool(LPVOID lpParam);
+	static void ThreadFunction(MT_Data_Thread *data);
 
 	ThreadPool (const ThreadPool &other);
 	ThreadPool& operator = (const ThreadPool &other);

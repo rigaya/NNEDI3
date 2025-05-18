@@ -18,13 +18,11 @@
 **   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
-#include <windows.h>
-#define _USE_MATH_DEFINES
 #include <math.h>
-#include <tchar.h>
 #include <float.h>
 #include <stdio.h>
 #include "./avisynth.h"
+#include "rgy_osdep.h"
 #include "./PlanarFrame.h"
 #include "./ThreadPoolInterface.h"
 
