@@ -2,25 +2,12 @@ nnedi3_sources = [
   'nnedi3.cpp',
   'PlanarFrame.cpp',
   'ThreadPool.cpp',
-  'ThreadPoolInterface.cpp'
+  'ThreadPoolInterface.cpp',
+  'compat/rgy_event.cpp'
 ]
 
 nnedi3_avx2_sources = [
   'nnedi3_intrinsic_FMA_x64.cpp'
-]
-
-nnedi3_headers = [
-  'internal.h',
-  'knnedi_version.h',
-  'nnedi3.h',
-  'nnedi3_kernel.h',
-  'PlanarFrame.h',
-  'resource.h',
-  'ThreadPool.h',
-  'ThreadPoolLinux.h',
-  'ThreadPoolDef.h',
-  'ThreadPoolInterface.h',
-  'ThreadPoolInterfaceLinux.h',
 ]
 
 # バイナリデータファイルのobjcopy処理
@@ -50,7 +37,7 @@ nnedi3_avx2_dep = declare_dependency(
   link_with: nnedi3_avx2_lib,
 )
 
-shared_module('nnedi3',
+shared_module('libnnedi3',
   nnedi3_sources,
   include_directories : include_directories('.', './compat'),
   dependencies : [avisynth_dep, nnedi3_avx2_dep] + (not (host_machine.system() == 'windows') ? [binary1_dep] : []),
