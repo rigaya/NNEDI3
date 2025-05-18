@@ -22,31 +22,17 @@
 
 #include "./nnedi3.h"
 
-extern "C" void computeNetwork0_AVX2(const float *input,const float *weights,uint8_t *d);
-extern "C" void computeNetwork0_i16_AVX2(const float *inputf,const float *weightsf,uint8_t *d);
-extern "C" void computeNetwork0new_AVX2(const float *datai,const float *weights,uint8_t *d);
-extern "C" void uc2f48_AVX2(const uint8_t *t,const int pitch,float *p);
-extern "C" void uc2f48_AVX2_16(const uint8_t *t, const int pitch, float *p);
-extern "C" void uc2s48_AVX2(const uint8_t *t,const int pitch,float *pf);
-extern "C" void uc2s64_AVX2(const uint8_t *t,const int pitch,float *p);
-extern "C" void dotProd_m32_m16_AVX2(const float *data, const float *weights, float *vals, const int n, const int len, const float *istd);
-extern "C" void dotProd_m48_m16_AVX2(const float *data, const float *weights, float *vals, const int n, const int len, const float *istd);
-extern "C" void dotProd_m32_m16_i16_AVX2(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
-extern "C" void dotProd_m48_m16_i16_AVX2(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
-extern "C" void e0_m16_AVX2(float *s,const int n);
-extern "C" void e1_m16_AVX2(float *s,const int n);
-extern "C" void e2_m16_AVX2(float *s,const int n);
-extern "C" int processLine0_AVX2_ASM(const uint8_t *tempu,int width,uint8_t *dstp,const uint8_t *src3p,const int src_pitch,const uint16_t *val_min_max);
-extern "C" int processLine0_AVX2_ASM_16(const uint8_t *tempu,int width,uint8_t *dstp,const uint8_t *src3p,const int src_pitch,const uint16_t *val_min_max);
-extern "C" int processLine0_AVX2_ASM_32(const uint8_t *tempu,int width,uint8_t *dstp,const uint8_t *src3p,const int src_pitch);
-extern "C" void weightedAvgElliottMul5_m16_AVX2(const float *w,const int n,float *mstd);
-extern "C" void extract_m8_AVX2(const uint8_t *srcp,const int stride,const int xdia,const int ydia,float *mstd,float *input);
-extern "C" void extract_m8_i16_AVX2(const uint8_t *srcp,const int stride,const int xdia,const int ydia,float *mstd,float *inputf);
-extern "C" void extract_m8_i16_AVX2_16(const uint8_t *srcp, const int stride, const int xdia, const int ydia, float *mstd, float *inputf);
-extern "C" void extract_m8_i16_AVX2_16_2(const uint8_t *srcp, const int stride, const int xdia, const int ydia, float *inputf,int32_t *sum,int64_t *sumsq);
-extern "C" void extract_m8_AVX2_16(const uint8_t *srcp, const int stride, const int xdia, const int ydia, float *mstd, float *input);
-extern "C" void extract_m8_AVX2_32(const uint8_t *srcp, const int stride, const int xdia, const int ydia, float *mstd, float *input);
+#if defined(_WIN32) || defined(_WIN64)
+#define ENABLE_SSE2 1
+#define ENABLE_AVX 1
+#define ENABLE_AVX2 1
+#else
+#define ENABLE_SSE2 0
+#define ENABLE_AVX 0
+#define ENABLE_AVX2 0
+#endif
 
+#if ENABLE_SSE2
 extern "C" void computeNetwork0_SSE2(const float *input,const float *weights,uint8_t *d);
 extern "C" void computeNetwork0_i16_SSE2(const float *inputf,const float *weightsf,uint8_t *d);
 extern "C" void uc2f48_SSE2(const uint8_t *t,const int pitch,float *p);
@@ -73,7 +59,34 @@ extern "C" void castScale_SSE(const float *val,const float *scale,uint8_t *dstp,
 extern "C" void castScale_SSE_16(const float *val, const float *scale, uint16_t *dstp,const uint32_t val_min,const uint32_t val_max);
 extern "C" void uc2s64_SSE2(const uint8_t *t,const int pitch,float *p);
 extern "C" void computeNetwork0new_SSE2(const float *datai,const float *weights,uint8_t *d);
+#else
+#define computeNetwork0_SSE2             computeNetwork0_C  
+#define computeNetwork0_i16_SSE2         computeNetwork0_i16_C
+#define uc2f48_SSE2                      uc2f48_C             
+#define uc2f48_SSE2_16                   uc2f48_C_16          
+#define uc2s48_SSE2                      uc2s48_C             
+#define processLine0_SSE2_ASM            processLine0_C   
+#define processLine0_SSE2_ASM_16         processLine0_C_16
+#define processLine0_SSE2_ASM_32         processLine0_C_32
+#define extract_m8_SSE2                  extract_m8_C         
+#define extract_m8_SSE2_16               extract_m8_C_16      
+#define extract_m8_SSE2_32               extract_m8_C_32      
+#define extract_m8_i16_SSE2              extract_m8_i16_C     
+#define extract_m8_i16_SSE2_16           extract_m8_i16_C_16
+#define extract_m8_i16_C_16_2           extract_m8_i16_C_16
+#define dotProd_m32_m16_SSE2             dotProd_C
+#define dotProd_m48_m16_SSE2             dotProd_C
+#define dotProd_m32_m16_i16_SSE2         dotProdS_C_16
+#define dotProd_m48_m16_i16_SSE2         dotProdS_C_16
+#define e0_m16_SSE2                      e0_m16_C
+#define e1_m16_SSE2                      e1_m16_C
+#define e2_m16_SSE2                      e2_m16_C
+#define weightedAvgElliottMul5_m16_SSE2  weightedAvgElliottMul5_m16_C
+#define uc2s64_SSE2                      uc2s64_C         
+#define computeNetwork0new_SSE2          computeNetwork0new_C
+#endif
 
+#if ENABLE_AVX
 extern "C" void computeNetwork0_AVX(const float *input,const float *weights,uint8_t *d);
 extern "C" void computeNetwork0_i16_AVX(const float *inputf,const float *weightsf,uint8_t *d);
 extern "C" void castScale_AVX(const float *val,const float *scale,uint8_t *dstp,const uint32_t val_min,const uint32_t val_max);
@@ -100,6 +113,84 @@ extern "C" void e2_m16_AVX(float *s,const int n);
 extern "C" void weightedAvgElliottMul5_m16_AVX(const float *w,const int n,float *mstd);
 extern "C" void uc2s64_AVX(const uint8_t *t,const int pitch,float *p);
 extern "C" void computeNetwork0new_AVX(const float *datai,const float *weights,uint8_t *d);
+#else
+#define computeNetwork0_AVX             computeNetwork0_SSE2  
+#define computeNetwork0_i16_AVX         computeNetwork0_i16_SSE2
+#define uc2f48_AVX                      uc2f48_SSE2             
+#define uc2f48_AVX_16                   uc2f48_SSE2_16          
+#define uc2s48_AVX                      uc2s48_SSE2             
+#define processLine0_AVX_ASM            processLine0_SSE2_ASM   
+#define processLine0_AVX_ASM_16         processLine0_SSE2_ASM_16
+#define processLine0_AVX_ASM_32         processLine0_SSE2_ASM_32
+#define extract_m8_AVX                  extract_m8_SSE2         
+#define extract_m8_AVX_16               extract_m8_SSE2_16      
+#define extract_m8_AVX_32               extract_m8_SSE2_32      
+#define extract_m8_i16_AVX              extract_m8_i16_SSE2     
+#define extract_m8_i16_AVX_16           extract_m8_i16_SSE2_16
+#define extract_m8_i16_C_16_3           extract_m8_i16_C_16
+#define dotProd_m32_m16_AVX             dotProd_m32_m16_SSE2
+#define dotProd_m48_m16_AVX             dotProd_m48_m16_SSE2
+#define dotProd_m32_m16_i16_AVX         dotProd_m32_m16_i16_SSE2
+#define dotProd_m48_m16_i16_AVX         dotProd_m48_m16_i16_SSE2
+#define e0_m16_AVX                      e0_m16_SSE2
+#define e1_m16_AVX                      e1_m16_SSE2
+#define e2_m16_AVX                      e2_m16_SSE2
+#define weightedAvgElliottMul5_m16_AVX  weightedAvgElliottMul5_m16_SSE2
+#define uc2s64_AVX                      uc2s64_SSE2         
+#define computeNetwork0new_AVX          computeNetwork0new_SSE2
+#endif
+
+#if ENABLE_AVX2
+extern "C" void computeNetwork0_AVX2(const float *input,const float *weights,uint8_t *d);
+extern "C" void computeNetwork0_i16_AVX2(const float *inputf,const float *weightsf,uint8_t *d);
+extern "C" void computeNetwork0new_AVX2(const float *datai,const float *weights,uint8_t *d);
+extern "C" void uc2f48_AVX2(const uint8_t *t,const int pitch,float *p);
+extern "C" void uc2f48_AVX2_16(const uint8_t *t, const int pitch, float *p);
+extern "C" void uc2s48_AVX2(const uint8_t *t,const int pitch,float *pf);
+extern "C" void uc2s64_AVX2(const uint8_t *t,const int pitch,float *p);
+extern "C" void dotProd_m32_m16_AVX2(const float *data, const float *weights, float *vals, const int n, const int len, const float *istd);
+extern "C" void dotProd_m48_m16_AVX2(const float *data, const float *weights, float *vals, const int n, const int len, const float *istd);
+extern "C" void dotProd_m32_m16_i16_AVX2(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
+extern "C" void dotProd_m48_m16_i16_AVX2(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
+extern "C" void e0_m16_AVX2(float *s,const int n);
+extern "C" void e1_m16_AVX2(float *s,const int n);
+extern "C" void e2_m16_AVX2(float *s,const int n);
+extern "C" int processLine0_AVX2_ASM(const uint8_t *tempu,int width,uint8_t *dstp,const uint8_t *src3p,const int src_pitch,const uint16_t *val_min_max);
+extern "C" int processLine0_AVX2_ASM_16(const uint8_t *tempu,int width,uint8_t *dstp,const uint8_t *src3p,const int src_pitch,const uint16_t *val_min_max);
+extern "C" int processLine0_AVX2_ASM_32(const uint8_t *tempu,int width,uint8_t *dstp,const uint8_t *src3p,const int src_pitch);
+extern "C" void weightedAvgElliottMul5_m16_AVX2(const float *w,const int n,float *mstd);
+extern "C" void extract_m8_AVX2(const uint8_t *srcp,const int stride,const int xdia,const int ydia,float *mstd,float *input);
+extern "C" void extract_m8_i16_AVX2(const uint8_t *srcp,const int stride,const int xdia,const int ydia,float *mstd,float *inputf);
+extern "C" void extract_m8_i16_AVX2_16(const uint8_t *srcp, const int stride, const int xdia, const int ydia, float *mstd, float *inputf);
+extern "C" void extract_m8_i16_AVX2_16_2(const uint8_t *srcp, const int stride, const int xdia, const int ydia, float *inputf,int32_t *sum,int64_t *sumsq);
+extern "C" void extract_m8_AVX2_16(const uint8_t *srcp, const int stride, const int xdia, const int ydia, float *mstd, float *input);
+extern "C" void extract_m8_AVX2_32(const uint8_t *srcp, const int stride, const int xdia, const int ydia, float *mstd, float *input);
+#else
+#define computeNetwork0_AVX2             computeNetwork0_AVX  
+#define computeNetwork0_i16_AVX2         computeNetwork0_i16_AVX
+#define uc2f48_AVX2                      uc2f48_AVX             
+#define uc2f48_AVX2_16                   uc2f48_AVX_16          
+#define uc2s48_AVX2                      uc2s48_AVX             
+#define processLine0_AVX2_ASM            processLine0_AVX_ASM   
+#define processLine0_AVX2_ASM_16         processLine0_AVX_ASM_16
+#define processLine0_AVX2_ASM_32         processLine0_AVX_ASM_32
+#define extract_m8_AVX2                  extract_m8_AVX         
+#define extract_m8_AVX2_16               extract_m8_AVX_16      
+#define extract_m8_AVX2_32               extract_m8_AVX_32      
+#define extract_m8_i16_AVX2              extract_m8_i16_AVX     
+#define extract_m8_i16_AVX2_16           extract_m8_i16_AVX_16
+#define extract_m8_i16_C_16_4            extract_m8_i16_C_16
+#define dotProd_m32_m16_AVX2             dotProd_m32_m16_AVX
+#define dotProd_m48_m16_AVX2             dotProd_m48_m16_AVX
+#define dotProd_m32_m16_i16_AVX2         dotProd_m32_m16_i16_AVX
+#define dotProd_m48_m16_i16_AVX2         dotProd_m48_m16_i16_AVX
+#define e0_m16_AVX2                      e0_m16_AVX
+#define e1_m16_AVX2                      e1_m16_AVX
+#define e2_m16_AVX2                      e2_m16_AVX
+#define weightedAvgElliottMul5_m16_AVX2  weightedAvgElliottMul5_m16_AVX
+#define uc2s64_AVX2                      uc2s64_AVX         
+#define computeNetwork0new_AVX2          computeNetwork0new_AVX
+#endif
 
 
 #if (defined(_WIN32) || defined(_WIN64))
@@ -2627,8 +2718,59 @@ void evalFunc_2(void *ps)
 		NNPixels+=ystart*NNPixels_pitch;
 
 		const uint8_t *srcpp = srcp-((ydia-1)*src_pitch+xdiad2m1);
+#if ENABLE_AVX
+		if (opt>=4)
+		{
+			for (int y=ystart; y<ystop; y+=2)
+			{
+				for (int x=32; x<width_32; x++)
+				{
+					if (NNPixels[x]!=0) continue;
 
-		if (opt==1)
+					float mstd[4];
+
+					extract(srcpp+x,src_pitch,xdia,ydia,mstd,input);
+					for (int i=0; i<qual; i++)
+					{
+						dotProd(input,weights1[i],temp,nns2,asize,mstd+2);
+						expf(temp,nns);
+						wae5(temp,nns,mstd);
+					}
+					castScale_AVX(mstd,&scale,dstp+x,val_min,val_max);
+				}
+				srcpp += src_pitch2;
+				dstp += dst_pitch2;
+				NNPixels+=NNPixels_pitch_2;
+			}
+		} else
+#endif
+#if ENABLE_SSE2
+		if (opt > 1)
+		{
+			for (int y=ystart; y<ystop; y+=2)
+			{
+				for (int x=32; x<width_32; x++)
+				{
+					if (NNPixels[x]!=0) continue;
+
+					float mstd[4];
+
+					extract(srcpp+x,src_pitch,xdia,ydia,mstd,input);
+					for (int i=0; i<qual; i++)
+					{
+						dotProd(input,weights1[i],temp,nns2,asize,mstd+2);
+						expf(temp,nns);
+						wae5(temp,nns,mstd);
+					}
+					castScale_SSE(mstd,&scale,dstp+x,val_min,val_max);
+				}
+				srcpp += src_pitch2;
+				dstp += dst_pitch2;
+				NNPixels+=NNPixels_pitch_2;
+			}
+		}
+		else
+#endif
 		{
 			for (int y=ystart; y<ystop; y+=2)
 			{
@@ -2650,57 +2792,6 @@ void evalFunc_2(void *ps)
 				srcpp += src_pitch2;
 				dstp += dst_pitch2;
 				NNPixels+=NNPixels_pitch_2;
-			}
-		}
-		else
-		{
-			if (opt>=4)
-			{
-				for (int y=ystart; y<ystop; y+=2)
-				{
-					for (int x=32; x<width_32; x++)
-					{
-						if (NNPixels[x]!=0) continue;
-
-						float mstd[4];
-
-						extract(srcpp+x,src_pitch,xdia,ydia,mstd,input);
-						for (int i=0; i<qual; i++)
-						{
-							dotProd(input,weights1[i],temp,nns2,asize,mstd+2);
-							expf(temp,nns);
-							wae5(temp,nns,mstd);
-						}
-						castScale_AVX(mstd,&scale,dstp+x,val_min,val_max);
-					}
-					srcpp += src_pitch2;
-					dstp += dst_pitch2;
-					NNPixels+=NNPixels_pitch_2;
-				}
-			}
-			else
-			{
-				for (int y=ystart; y<ystop; y+=2)
-				{
-					for (int x=32; x<width_32; x++)
-					{
-						if (NNPixels[x]!=0) continue;
-
-						float mstd[4];
-
-						extract(srcpp+x,src_pitch,xdia,ydia,mstd,input);
-						for (int i=0; i<qual; i++)
-						{
-							dotProd(input,weights1[i],temp,nns2,asize,mstd+2);
-							expf(temp,nns);
-							wae5(temp,nns,mstd);
-						}
-						castScale_SSE(mstd,&scale,dstp+x,val_min,val_max);
-					}
-					srcpp += src_pitch2;
-					dstp += dst_pitch2;
-					NNPixels+=NNPixels_pitch_2;
-				}
 			}
 		}
 	}
@@ -2742,7 +2833,7 @@ void extract_m8_i16_C_16(const uint8_t *srcp,const int stride,const int xdia,con
 	}
 }
 
-
+#if ENABLE_SSE2
 void extract_m8_i16_C_16_2(const uint8_t *srcp, const int stride, const int xdia, const int ydia, float *mstd, float *inputf)
 {
 	int64_t sumsq;
@@ -2762,8 +2853,9 @@ void extract_m8_i16_C_16_2(const uint8_t *srcp, const int stride, const int xdia
 		mstd[2] = 1.0f/mstd[1];
 	}
 }
+#endif
 
-
+#if ENABLE_AVX
 void extract_m8_i16_C_16_3(const uint8_t *srcp, const int stride, const int xdia, const int ydia, float *mstd, float *inputf)
 {
 	int64_t sumsq;
@@ -2783,8 +2875,9 @@ void extract_m8_i16_C_16_3(const uint8_t *srcp, const int stride, const int xdia
 		mstd[2] = 1.0f/mstd[1];
 	}
 }
+#endif
 
-
+#if ENABLE_AVX2
 void extract_m8_i16_C_16_4(const uint8_t *srcp, const int stride, const int xdia, const int ydia, float *mstd, float *inputf)
 {
 	int64_t sumsq;
@@ -2804,7 +2897,7 @@ void extract_m8_i16_C_16_4(const uint8_t *srcp, const int stride, const int xdia
 		mstd[2] = 1.0f/mstd[1];
 	}
 }
-
+#endif
 void extract_m8_C_16(const uint8_t *srcp,const int stride,const int xdia,const int ydia,float *mstd,float *input)
 {
 	int64_t sum = 0, sumsq = 0;
@@ -2836,7 +2929,6 @@ void extract_m8_C_16(const uint8_t *srcp,const int stride,const int xdia,const i
 		mstd[2] = 1.0f/mstd[1];
 	}
 }
-
 
 void evalFunc_2_16(void *ps)
 {
@@ -2969,7 +3061,63 @@ void evalFunc_2_16(void *ps)
 		const uint8_t *srcpp = srcp-((ydia-1)*src_pitch+(xdiad2m1 << 1));
 		NNPixels+=ystart*NNPixels_pitch;
 
-		if (opt==1)
+#if ENABLE_AVX
+		if (opt>=4)
+		{
+			for (int y=ystart; y<ystop; y+=2)
+			{
+				for (int x=32; x<width_32; x++)
+				{
+					uint16_t *dst0 = (uint16_t *)dstp;
+
+					if (NNPixels[x]!=0) continue;
+
+					float mstd[4];
+
+					extract(srcpp+(x<<1),src_pitch,xdia,ydia,mstd,input);
+					for (int i=0; i<qual; i++)
+					{
+						dotProd(input,weights1[i],temp,nns2,asize,mstd+2);
+						expf(temp,nns);
+						wae5(temp,nns,mstd);
+					}
+					castScale_AVX_16(mstd,&scale,dst0+x,val_min,val_max);
+				}
+				srcpp += src_pitch2;
+				dstp += dst_pitch2;
+				NNPixels+=NNPixels_pitch_2;
+			}
+		}
+		else
+#endif
+#if ENABLE_SSE2
+		if (opt > 1)
+		{
+			for (int y=ystart; y<ystop; y+=2)
+			{
+				for (int x=32; x<width_32; x++)
+				{
+					uint16_t *dst0 = (uint16_t *)dstp;
+
+					if (NNPixels[x]!=0) continue;
+
+					float mstd[4];
+
+					extract(srcpp+(x<<1),src_pitch,xdia,ydia,mstd,input);
+					for (int i=0; i<qual; i++)
+					{
+						dotProd(input,weights1[i],temp,nns2,asize,mstd+2);
+						expf(temp,nns);
+						wae5(temp,nns,mstd);
+					}
+					castScale_SSE_16(mstd,&scale,dst0+x,val_min,val_max);
+				}
+				srcpp += src_pitch2;
+				dstp += dst_pitch2;
+				NNPixels+=NNPixels_pitch_2;
+			}
+		} else
+#endif
 		{
 			for (int y=ystart; y<ystop; y+=2)
 			{
@@ -2993,61 +3141,6 @@ void evalFunc_2_16(void *ps)
 				srcpp += src_pitch2;
 				dstp += dst_pitch2;
 				NNPixels+=NNPixels_pitch_2;
-			}
-		}
-		else
-		{
-			if (opt>=4)
-			{
-				for (int y=ystart; y<ystop; y+=2)
-				{
-					for (int x=32; x<width_32; x++)
-					{
-						uint16_t *dst0 = (uint16_t *)dstp;
-
-						if (NNPixels[x]!=0) continue;
-
-						float mstd[4];
-
-						extract(srcpp+(x<<1),src_pitch,xdia,ydia,mstd,input);
-						for (int i=0; i<qual; i++)
-						{
-							dotProd(input,weights1[i],temp,nns2,asize,mstd+2);
-							expf(temp,nns);
-							wae5(temp,nns,mstd);
-						}
-						castScale_AVX_16(mstd,&scale,dst0+x,val_min,val_max);
-					}
-					srcpp += src_pitch2;
-					dstp += dst_pitch2;
-					NNPixels+=NNPixels_pitch_2;
-				}
-			}
-			else
-			{
-				for (int y=ystart; y<ystop; y+=2)
-				{
-					for (int x=32; x<width_32; x++)
-					{
-						uint16_t *dst0 = (uint16_t *)dstp;
-
-						if (NNPixels[x]!=0) continue;
-
-						float mstd[4];
-
-						extract(srcpp+(x<<1),src_pitch,xdia,ydia,mstd,input);
-						for (int i=0; i<qual; i++)
-						{
-							dotProd(input,weights1[i],temp,nns2,asize,mstd+2);
-							expf(temp,nns);
-							wae5(temp,nns,mstd);
-						}
-						castScale_SSE_16(mstd,&scale,dst0+x,val_min,val_max);
-					}
-					srcpp += src_pitch2;
-					dstp += dst_pitch2;
-					NNPixels+=NNPixels_pitch_2;
-				}
 			}
 		}
 	}
