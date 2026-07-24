@@ -18,6 +18,12 @@ nnedi3_avx512_sources = [
   'nnedi3_intrinsic_AVX512_process.cpp',
 ]
 
+nnedi3_main_args = cpp_args
+if host_machine.system() == 'linux'
+  # C backendの乗算と加算を、外部のCPU指定にかかわらず分離したまま維持する
+  nnedi3_main_args += ['-ffp-contract=off']
+endif
+
 nnedi3_headers = [
   'internal.h',
   'knnedi_version.h',
@@ -63,10 +69,16 @@ if not (host_machine.system() == 'windows')
 endif
 
 # AVX2用のstatic_libraryを作成
+nnedi3_avx2_args = avx2_args
+if host_machine.system() == 'linux'
+  # dispatchの必須条件と一致させ、BMI/BMI2/POPCNTを暗黙の必須機能にしない
+  nnedi3_avx2_args = cpp_args + ['-mavx2', '-mfma']
+endif
+
 nnedi3_avx2_lib = static_library('nnedi3_avx2',
   nnedi3_avx2_sources,
   include_directories : include_directories('../..', '../../KUtil',  '../../common'),
-  cpp_args : avx2_args,
+  cpp_args : nnedi3_avx2_args,
   name_prefix : '',
 )
 
@@ -91,7 +103,7 @@ shared_module('nnedi3',
   nnedi3_sources,
   include_directories : include_directories('../..', '../../KUtil',  '../../common'),
   dependencies : [avisynth_dep, common_dep, cuda_dep, threads_dep, nnedi3_avx2_dep, nnedi3_avx512_dep] + (not (host_machine.system() == 'windows') ? [binary1_dep] : []),
-  cpp_args : cpp_args + binary1_symbol_args,
+  cpp_args : nnedi3_main_args + binary1_symbol_args,
   cuda_args : cuda_args,
   link_args : link_args + (host_machine.system() == 'linux' ? [
     '-Wl,--no-undefined,-z,noexecstack',
