@@ -1280,55 +1280,50 @@ weightedAvgElliottMul5_m16_FMA3 proc ptr_w:dword,n:dword,mstd:dword
 		
 		vxorps ymm0,ymm0,ymm0
 		vxorps ymm1,ymm1,ymm1
+		vxorps ymm2,ymm2,ymm2
+		vxorps ymm3,ymm3,ymm3
 		
 nloop_52:
-		vmovaps ymm2,YMMWORD ptr [eax+edi*4]
-		vmovaps ymm4,YMMWORD ptr [edx+edi*4]
-		vaddps ymm0,ymm0,ymm2
-		vandps ymm5,ymm4,YMMWORD ptr sign_bits_f_32
-		vaddps ymm5,ymm5,YMMWORD ptr ones_f_32
-		vrcpps ymm5,ymm5
-		vmulps ymm4,ymm4,ymm5
-		vfmadd231ps ymm1,ymm2,ymm4
-		
-		vmovaps ymm2,YMMWORD ptr [eax+edi*4+32]
-		vmovaps ymm4,YMMWORD ptr [edx+edi*4+32]
-		vaddps ymm0,ymm0,ymm2
-		vandps ymm5,ymm4,YMMWORD ptr sign_bits_f_32
-		vaddps ymm5,ymm5,YMMWORD ptr ones_f_32
-		vrcpps ymm5,ymm5
-		vmulps ymm4,ymm4,ymm5
-		vfmadd231ps ymm1,ymm2,ymm4
+		vmovaps ymm5,YMMWORD ptr [edx+edi*4]
+		vandps ymm4,ymm5,YMMWORD ptr sign_bits_f_32
+		vaddps ymm4,ymm4,YMMWORD ptr ones_f_32
+		vdivps ymm5,ymm5,ymm4
+		vaddps ymm0,ymm0,YMMWORD ptr [eax+edi*4]
+		vfmadd231ps ymm2,ymm5,YMMWORD ptr [eax+edi*4]
+
+		vmovaps ymm5,YMMWORD ptr [edx+edi*4+32]
+		vandps ymm4,ymm5,YMMWORD ptr sign_bits_f_32
+		vaddps ymm4,ymm4,YMMWORD ptr ones_f_32
+		vdivps ymm5,ymm5,ymm4
+		vaddps ymm1,ymm1,YMMWORD ptr [eax+edi*4+32]
+		vfmadd231ps ymm3,ymm5,YMMWORD ptr [eax+edi*4+32]
 
 		add edi,16
 		sub ecx,16
 		jnz short nloop_52
 		
-		vextractf128 xmm2,ymm0,1
-		vextractf128 xmm3,ymm1,1
-		vaddps xmm0,xmm0,xmm2
-		vaddps xmm1,xmm1,xmm3
-		
-		vmovhlps xmm2,xmm2,xmm0
-		vmovhlps xmm3,xmm3,xmm1
-		vaddps xmm0,xmm0,xmm2
-		vaddps xmm1,xmm1,xmm3
-		vpshuflw xmm2,xmm0,14
-		vpshuflw xmm3,xmm1,14
-		vaddss xmm0,xmm0,xmm2
-		vaddss xmm1,xmm1,xmm3
+		vaddps ymm0,ymm0,ymm1
+		vaddps ymm2,ymm2,ymm3
+		vextractf128 xmm1,ymm0,1
+		vextractf128 xmm3,ymm2,1
+		vaddps xmm0,xmm0,xmm1
+		vaddps xmm2,xmm2,xmm3
+		vhaddps xmm0,xmm0,xmm0
+		vhaddps xmm0,xmm0,xmm0
+		vhaddps xmm2,xmm2,xmm2
+		vhaddps xmm2,xmm2,xmm2
+		vmovaps xmm1,xmm2
 		vcomiss xmm0,dword ptr min_weight_sum
 		jbe short nodiv2
 		vmulss xmm1,xmm1,dword ptr five_f
-		vrcpss xmm0,xmm0,xmm0
-		vmulss xmm1,xmm1,xmm0
+		vdivss xmm1,xmm1,xmm0
 		jmp short finish_52
 nodiv2:
 		vxorps xmm1,xmm1,xmm1
 finish_52:
 		mov eax,mstd
-		vmulss xmm1,xmm1,dword ptr[eax+4]
-		vaddss xmm1,xmm1,dword ptr[eax]
+		vmovss xmm2,dword ptr[eax+4]
+		vfmadd213ss xmm1,xmm2,dword ptr[eax]
 		vaddss xmm1,xmm1,dword ptr[eax+12]
 		vmovss dword ptr[eax+12],xmm1
 		
@@ -3958,19 +3953,19 @@ eloop8:
 		vmovaps ymm0,YMMWORD ptr [eax]
 		vminps ymm0,ymm0,YMMWORD ptr exp_hi
 		vmaxps ymm0,ymm0,YMMWORD ptr exp_lo
-		vmulps ymm0,ymm0,YMMWORD ptr e1_scale
+		vmovaps ymm1,YMMWORD ptr e1_bias
+		vfmadd231ps ymm1,ymm0,YMMWORD ptr e1_scale
+		vpslld ymm2,ymm1,23
+		vsubps ymm1,ymm1,YMMWORD ptr e1_bias
+		vmovaps ymm3,YMMWORD ptr e1_scale
+		vfmsub213ps ymm0,ymm3,ymm1
 		vmovaps ymm1,ymm0
-		vaddps ymm0,ymm0,YMMWORD ptr e1_bias
-		vpslld ymm2,ymm0,23
-		vsubps ymm0,ymm0,YMMWORD ptr e1_bias
-		vsubps ymm1,ymm1,ymm0
-		vmulps ymm0,ymm1,YMMWORD ptr e1_c1
-		vmulps ymm1,ymm1,ymm1
-		vmulps ymm1,ymm1,YMMWORD ptr e1_c2
-		vaddps ymm0,ymm0,YMMWORD ptr e1_c0
-		vaddps ymm0,ymm0,ymm1
-		vpaddd ymm0,ymm0,ymm2
-		vmovaps YMMWORD ptr [eax],ymm0
+		vmovaps ymm3,YMMWORD ptr e1_c1
+		vfmadd213ps ymm1,ymm3,YMMWORD ptr e1_c0
+		vmulps ymm0,ymm0,ymm0
+		vfmadd231ps ymm1,ymm0,YMMWORD ptr e1_c2
+		vpaddd ymm1,ymm1,ymm2
+		vmovaps YMMWORD ptr [eax],ymm1
 		add eax,32
 		sub ecx,8
 		jnz short eloop8
@@ -3992,39 +3987,32 @@ eloop4:
 		vmovaps ymm0,YMMWORD ptr [eax]
 		vminps ymm0,ymm0,YMMWORD ptr exp_hi
 		vmaxps ymm0,ymm0,YMMWORD ptr exp_lo
-		vmulps ymm1,ymm0,YMMWORD ptr exp_rln2
 		vxorps ymm2,ymm2,ymm2
-		vaddps ymm1,ymm1,YMMWORD ptr am_0p5
+		vmovaps ymm1,YMMWORD ptr am_0p5
+		vfmadd231ps ymm1,ymm0,YMMWORD ptr exp_rln2
 		vcmpnltps ymm2,ymm2,ymm1
 		vpand ymm2,ymm2,YMMWORD ptr epi32_1
 		vcvttps2dq ymm1,ymm1
 		vpsubd ymm1,ymm1,ymm2
-		vmovaps ymm5,YMMWORD ptr exp_c1
 		vcvtdq2ps ymm3,ymm1
-		vmulps ymm4,ymm3,YMMWORD ptr exp_c2
-		vmulps ymm5,ymm5,ymm3
-		vsubps ymm0,ymm0,ymm4
-		vsubps ymm0,ymm0,ymm5
+		vfnmadd231ps ymm0,ymm3,YMMWORD ptr exp_c2
+		vfnmadd231ps ymm0,ymm3,YMMWORD ptr exp_c1
 		vpaddd ymm1,ymm1,YMMWORD ptr epi32_0x7f
 		vmovaps ymm2,ymm0
 		vmulps ymm0,ymm0,ymm0
-		vmulps ymm6,ymm0,YMMWORD ptr exp_q0
-		vmulps ymm4,ymm0,YMMWORD ptr exp_p0
-		vaddps ymm6,ymm6,YMMWORD ptr exp_q1
-		vaddps ymm4,ymm4,YMMWORD ptr exp_p1
-		vmulps ymm6,ymm6,ymm0
+		vmovaps ymm6,YMMWORD ptr exp_q0
+		vfmadd213ps ymm6,ymm0,YMMWORD ptr exp_q1
+		vmovaps ymm4,YMMWORD ptr exp_p0
+		vfmadd213ps ymm4,ymm0,YMMWORD ptr exp_p1
+		vfmadd213ps ymm6,ymm0,YMMWORD ptr exp_q2
 		vmulps ymm4,ymm4,ymm0
-		vaddps ymm6,ymm6,YMMWORD ptr exp_q2
-		vmulps ymm4,ymm4,ymm2
-		vmulps ymm6,ymm6,ymm0
-		vaddps ymm2,ymm2,ymm4
-		vaddps ymm6,ymm6,YMMWORD ptr exp_q3
+		vfmadd213ps ymm6,ymm0,YMMWORD ptr exp_q3
+		vfmadd231ps ymm2,ymm4,ymm2
 		vpslld ymm1,ymm1,23
 		vsubps ymm6,ymm6,ymm2
-		vrcpps ymm6,ymm6
-		vmulps ymm2,ymm2,ymm6
-		vaddps ymm2,ymm2,ymm2
-		vaddps ymm0,ymm2,YMMWORD ptr am_1
+		vdivps ymm2,ymm2,ymm6
+		vmovaps ymm0,YMMWORD ptr am_1
+		vfmadd231ps ymm0,ymm2,YMMWORD ptr exp_q3
 		vmulps ymm0,ymm0,ymm1
 		vmovaps YMMWORD ptr [eax],ymm0
 		add eax,32

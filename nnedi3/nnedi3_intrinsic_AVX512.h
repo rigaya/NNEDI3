@@ -22,6 +22,11 @@ void dotProd_m32_m16_i16_AVX512(const float* data, const float* weights,
     float* vals, int n, int len, const float* istd);
 void dotProd_m48_m16_i16_AVX512(const float* data, const float* weights,
     float* vals, int n, int len, const float* istd);
+void e0_m16_AVX512(float* values, int n);
+void e1_m16_AVX512(float* values, int n);
+void e2_m16_AVX512(float* values, int n);
+void weightedAvgElliottMul5_m16_AVX512(
+    const float* weights, int n, float* mstd);
 
 }
 

@@ -127,6 +127,126 @@ void dotProdInt16AVX512(const float* dataRaw, const float* weightsRaw,
     }
 }
 
+__m512 clampExpInput(const __m512 value)
+{
+    return _mm512_max_ps(
+        _mm512_min_ps(value, _mm512_set1_ps(80.0f)),
+        _mm512_set1_ps(-80.0f));
+}
+
+void expApprox0AVX512(float* values, const int n)
+{
+    const __m512 multiplier = _mm512_set1_ps(12102203.161561486f);
+    const __m512 bias = _mm512_set1_ps(1064866805.0f);
+    for (int i = 0; i < n; i += 16) {
+        const __m512 value = clampExpInput(_mm512_loadu_ps(values + i));
+        const __m512 encoded = _mm512_fmadd_ps(value, multiplier, bias);
+        _mm512_storeu_ps(values + i,
+            _mm512_castsi512_ps(_mm512_cvtps_epi32(encoded)));
+    }
+}
+
+void expApprox1AVX512(float* values, const int n)
+{
+    const __m512 scale = _mm512_set1_ps(1.4426950409f);
+    const __m512 magicBias = _mm512_set1_ps(12582912.0f);
+    const __m512 c0 = _mm512_set1_ps(1.00035f);
+    const __m512 c1 = _mm512_set1_ps(0.701277797f);
+    const __m512 c2 = _mm512_set1_ps(0.237348593f);
+    for (int i = 0; i < n; i += 16) {
+        const __m512 value = clampExpInput(_mm512_loadu_ps(values + i));
+        const __m512 biased = _mm512_fmadd_ps(value, scale, magicBias);
+        const __m512 exponentValue = _mm512_sub_ps(biased, magicBias);
+        const __m512 fraction = _mm512_fmsub_ps(value, scale, exponentValue);
+        const __m512 square = _mm512_mul_ps(fraction, fraction);
+        const __m512 linear = _mm512_fmadd_ps(c1, fraction, c0);
+        const __m512 polynomial = _mm512_fmadd_ps(c2, square, linear);
+        const __m512i exponentBits = _mm512_slli_epi32(
+            _mm512_castps_si512(biased), 23);
+        _mm512_storeu_ps(values + i, _mm512_castsi512_ps(
+            _mm512_add_epi32(_mm512_castps_si512(polynomial), exponentBits)));
+    }
+}
+
+void expApprox2AVX512(float* values, const int n)
+{
+    const __m512 reciprocalLn2 = _mm512_set1_ps(1.442695041f);
+    const __m512 half = _mm512_set1_ps(0.5f);
+    const __m512 c2 = _mm512_set1_ps(1.428606820e-6f);
+    const __m512 c1 = _mm512_set1_ps(6.931457520e-1f);
+    const __m512 q0 = _mm512_set1_ps(3.001985051e-6f);
+    const __m512 p0 = _mm512_set1_ps(1.261771931e-4f);
+    const __m512 q1 = _mm512_set1_ps(2.524483403e-3f);
+    const __m512 p1 = _mm512_set1_ps(3.029944077e-2f);
+    const __m512 q2 = _mm512_set1_ps(2.272655482e-1f);
+    const __m512 q3 = _mm512_set1_ps(2.0f);
+    const __m512 zero = _mm512_setzero_ps();
+    const __m512 one = _mm512_set1_ps(1.0f);
+    const __m512 two = _mm512_set1_ps(2.0f);
+    const __m512i oneInt = _mm512_set1_epi32(1);
+    const __m512i exponentBias = _mm512_set1_epi32(0x7f);
+
+    for (int i = 0; i < n; i += 16) {
+        __m512 value = clampExpInput(_mm512_loadu_ps(values + i));
+        const __m512 roundedInput = _mm512_fmadd_ps(
+            value, reciprocalLn2, half);
+        const __mmask16 correctionMask = _mm512_cmp_ps_mask(
+            zero, roundedInput, _CMP_NLT_US);
+        __m512i exponent = _mm512_cvttps_epi32(roundedInput);
+        exponent = _mm512_sub_epi32(exponent,
+            _mm512_maskz_mov_epi32(correctionMask, oneInt));
+        const __m512 exponentFloat = _mm512_cvtepi32_ps(exponent);
+        value = _mm512_fnmadd_ps(exponentFloat, c2, value);
+        value = _mm512_fnmadd_ps(exponentFloat, c1, value);
+
+        const __m512 square = _mm512_mul_ps(value, value);
+        __m512 denominator = _mm512_fmadd_ps(q0, square, q1);
+        __m512 numerator = _mm512_fmadd_ps(p0, square, p1);
+        denominator = _mm512_fmadd_ps(denominator, square, q2);
+        numerator = _mm512_mul_ps(numerator, square);
+        denominator = _mm512_fmadd_ps(denominator, square, q3);
+        numerator = _mm512_fmadd_ps(numerator, value, value);
+        denominator = _mm512_sub_ps(denominator, numerator);
+        const __m512 ratio = _mm512_div_ps(numerator, denominator);
+        const __m512 approximation = _mm512_fmadd_ps(ratio, two, one);
+        const __m512i scaleBits = _mm512_slli_epi32(
+            _mm512_add_epi32(exponent, exponentBias), 23);
+        _mm512_storeu_ps(values + i, _mm512_mul_ps(
+            approximation, _mm512_castsi512_ps(scaleBits)));
+    }
+}
+
+void weightedAverageAVX512(const float* weights, const int n, float* mstd)
+{
+    const float* const outputs = weights + n;
+    const __m512 absoluteMask = _mm512_castsi512_ps(
+        _mm512_set1_epi32(0x7fffffff));
+    const __m512 one = _mm512_set1_ps(1.0f);
+    __m512 weightSum = _mm512_setzero_ps();
+    __m512 valueSum = _mm512_setzero_ps();
+
+    for (int i = 0; i < n; i += 16) {
+        const __m512 weight = _mm512_loadu_ps(weights + i);
+        const __m512 output = _mm512_loadu_ps(outputs + i);
+        const __m512 denominator = _mm512_add_ps(
+            _mm512_and_ps(output, absoluteMask), one);
+        const __m512 elliott = _mm512_div_ps(output, denominator);
+        weightSum = _mm512_add_ps(weightSum, weight);
+        valueSum = _mm512_fmadd_ps(weight, elliott, valueSum);
+    }
+
+    const float weightTotal = horizontalSum16(weightSum);
+    const float valueTotal = horizontalSum16(valueSum);
+    float normalized = 0.0f;
+    if (weightTotal > 1.0e-10f) {
+        normalized = _mm_cvtss_f32(_mm_div_ss(
+            _mm_set_ss(5.0f * valueTotal), _mm_set_ss(weightTotal)));
+    }
+    const __m128 centered = _mm_fmadd_ss(
+        _mm_set_ss(normalized), _mm_set_ss(mstd[1]), _mm_set_ss(mstd[0]));
+    mstd[3] += _mm_cvtss_f32(centered);
+}
+
 } // 無名名前空間
 
 extern "C" std::uint32_t nnedi3_avx512_build_marker() noexcept
@@ -157,4 +277,25 @@ extern "C" void dotProd_m48_m16_i16_AVX512(const float* data, const float* weigh
     float* vals, const int n, const int len, const float* istd)
 {
     dotProdInt16AVX512(data, weights, vals, n, len, istd);
+}
+
+extern "C" void e0_m16_AVX512(float* values, const int n)
+{
+    expApprox0AVX512(values, n);
+}
+
+extern "C" void e1_m16_AVX512(float* values, const int n)
+{
+    expApprox1AVX512(values, n);
+}
+
+extern "C" void e2_m16_AVX512(float* values, const int n)
+{
+    expApprox2AVX512(values, n);
+}
+
+extern "C" void weightedAvgElliottMul5_m16_AVX512(
+    const float* weights, const int n, float* mstd)
+{
+    weightedAverageAVX512(weights, n, mstd);
 }

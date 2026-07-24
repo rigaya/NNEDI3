@@ -2019,28 +2019,20 @@ extern "C" void e1_m16_AVX2(
         ymm0 = _mm256_min_ps(ymm0, ymm3);
         // vmaxps ymm0,ymm0,ymm4
         ymm0 = _mm256_max_ps(ymm0, ymm4);
-        // vmulps ymm0,ymm0,ymm5
-        ymm0 = _mm256_mul_ps(ymm0, ymm5);
-        // vmovaps ymm1,ymm0
-        __m256 ymm1 = ymm0;
-        // vaddps ymm0,ymm0,ymm6
-        ymm0 = _mm256_add_ps(ymm0, ymm6);
-        // vpslld ymm2,ymm0,23
-        __m256i ymm2 = _mm256_slli_epi32(_mm256_castps_si256(ymm0), 23);
-        // vsubps ymm0,ymm0,ymm6
-        ymm0 = _mm256_sub_ps(ymm0, ymm6);
-        // vsubps ymm1,ymm1,ymm0
-        ymm1 = _mm256_sub_ps(ymm1, ymm0);
-        // vmulps ymm0,ymm1,ymm7
-        ymm0 = _mm256_mul_ps(ymm1, ymm7);
-        // vmulps ymm1,ymm1,ymm1
-        ymm1 = _mm256_mul_ps(ymm1, ymm1);
-        // vmulps ymm1,ymm1,ymm8
-        ymm1 = _mm256_mul_ps(ymm1, ymm8);
-        // vaddps ymm0,ymm0,ymm9
-        ymm0 = _mm256_add_ps(ymm0, ymm9);
-        // vaddps ymm0,ymm0,ymm1
-        ymm0 = _mm256_add_ps(ymm0, ymm1);
+        // FMA化: vfmadd231ps ymm1,ymm0,ymm5
+        __m256 ymm1 = _mm256_fmadd_ps(ymm0, ymm5, ymm6);
+        // vpslld ymm2,ymm1,23
+        __m256i ymm2 = _mm256_slli_epi32(_mm256_castps_si256(ymm1), 23);
+        // vsubps ymm1,ymm1,ymm6
+        ymm1 = _mm256_sub_ps(ymm1, ymm6);
+        // FMA化: vfmsub213ps ymm0,ymm5,ymm1
+        ymm0 = _mm256_fmsub_ps(ymm0, ymm5, ymm1);
+        // FMA化: vfmadd213ps ymm1,ymm7,ymm9
+        ymm1 = _mm256_fmadd_ps(ymm0, ymm7, ymm9);
+        // vmulps ymm0,ymm0,ymm0
+        ymm0 = _mm256_mul_ps(ymm0, ymm0);
+        // FMA化: vfmadd231ps ymm1,ymm0,ymm8
+        ymm0 = _mm256_fmadd_ps(ymm0, ymm8, ymm1);
         // vpaddd ymm0,ymm0,ymm2
         ymm0 = _mm256_castsi256_ps(_mm256_add_epi32(_mm256_castps_si256(ymm0), ymm2));
         // vmovaps YMMWORD ptr [rax],ymm0
@@ -2098,12 +2090,10 @@ extern "C" void e2_m16_AVX2(
         ymm0 = _mm256_min_ps(ymm0, ymm7);
         // vmaxps ymm0,ymm0,ymm8
         ymm0 = _mm256_max_ps(ymm0, ymm8);
-        // vmulps ymm1,ymm0,ymm9
-        __m256 ymm1 = _mm256_mul_ps(ymm0, ymm9);
         // vxorps ymm2,ymm2,ymm2
         __m256 ymm2 = _mm256_setzero_ps();
-        // vaddps ymm1,ymm1,ymm10
-        ymm1 = _mm256_add_ps(ymm1, ymm10);
+        // FMA化: vfmadd213ps ymm1,ymm9,ymm10
+        __m256 ymm1 = _mm256_fmadd_ps(ymm0, ymm9, ymm10);
         // vcmpnltps ymm2,ymm2,ymm1
         ymm2 = _mm256_cmp_ps(ymm2, ymm1, _CMP_NLT_US);
         // vpand ymm2,ymm2,ymm11
@@ -2112,58 +2102,39 @@ extern "C" void e2_m16_AVX2(
         __m256i ymm1_i = _mm256_cvttps_epi32(ymm1);
         // vpsubd ymm1,ymm1,ymm2
         ymm1_i = _mm256_sub_epi32(ymm1_i, _mm256_castps_si256(ymm2));
-        // vmovaps ymm5,ymm13
-        __m256 ymm5 = ymm13;
         // vcvtdq2ps ymm3,ymm1
         __m256 ymm3 = _mm256_cvtepi32_ps(ymm1_i);
-        // vmulps ymm4,ymm3,ymm12
-        __m256 ymm4 = _mm256_mul_ps(ymm3, ymm12);
-        // vmulps ymm5,ymm5,ymm3
-        ymm5 = _mm256_mul_ps(ymm5, ymm3);
-        // vsubps ymm0,ymm0,ymm4
-        ymm0 = _mm256_sub_ps(ymm0, ymm4);
-        // vsubps ymm0,ymm0,ymm5
-        ymm0 = _mm256_sub_ps(ymm0, ymm5);
+        // FMA化: vfnmadd231ps ymm0,ymm3,ymm12
+        ymm0 = _mm256_fnmadd_ps(ymm3, ymm12, ymm0);
+        // FMA化: vfnmadd231ps ymm0,ymm3,ymm13
+        ymm0 = _mm256_fnmadd_ps(ymm3, ymm13, ymm0);
         // vpaddd ymm1,ymm1,YMMWORD ptr epi32_0x7f
         ymm1_i = _mm256_add_epi32(ymm1_i, _mm256_load_si256((__m256i*)&epi32_0x7f));
         // vmovaps ymm2,ymm0
         __m256 ymm2_ps = ymm0;
         // vmulps ymm0,ymm0,ymm0
         ymm0 = _mm256_mul_ps(ymm0, ymm0);
-        // vmulps ymm6,ymm0,ymm14
-        __m256 ymm6 = _mm256_mul_ps(ymm0, ymm14);
-        // vmulps ymm4,ymm0,YMMWORD ptr exp_p0
-        ymm4 = _mm256_mul_ps(ymm0, _mm256_load_ps((float*)&exp_p0));
-        // vaddps ymm6,ymm6,YMMWORD ptr exp_q1
-        ymm6 = _mm256_add_ps(ymm6, _mm256_load_ps((float*)&exp_q1));
-        // vaddps ymm4,ymm4,YMMWORD ptr exp_p1
-        ymm4 = _mm256_add_ps(ymm4, _mm256_load_ps((float*)&exp_p1));
-        // vmulps ymm6,ymm6,ymm0
-        ymm6 = _mm256_mul_ps(ymm6, ymm0);
+        // FMA化: vfmadd213ps ymm6,ymm0,YMMWORD ptr exp_q1
+        __m256 ymm6 = _mm256_fmadd_ps(ymm14, ymm0, _mm256_load_ps((float*)&exp_q1));
+        // FMA化: vfmadd213ps ymm4,ymm0,YMMWORD ptr exp_p1
+        __m256 ymm4 = _mm256_fmadd_ps(_mm256_load_ps((float*)&exp_p0), ymm0,
+            _mm256_load_ps((float*)&exp_p1));
+        // FMA化: vfmadd213ps ymm6,ymm0,YMMWORD ptr exp_q2
+        ymm6 = _mm256_fmadd_ps(ymm6, ymm0, _mm256_load_ps((float*)&exp_q2));
         // vmulps ymm4,ymm4,ymm0
         ymm4 = _mm256_mul_ps(ymm4, ymm0);
-        // vaddps ymm6,ymm6,YMMWORD ptr exp_q2
-        ymm6 = _mm256_add_ps(ymm6, _mm256_load_ps((float*)&exp_q2));
-        // vmulps ymm4,ymm4,ymm2
-        ymm4 = _mm256_mul_ps(ymm4, ymm2_ps);
-        // vmulps ymm6,ymm6,ymm0
-        ymm6 = _mm256_mul_ps(ymm6, ymm0);
-        // vaddps ymm2,ymm2,ymm4
-        ymm2_ps = _mm256_add_ps(ymm2_ps, ymm4);
-        // vaddps ymm6,ymm6,YMMWORD ptr exp_q3
-        ymm6 = _mm256_add_ps(ymm6, _mm256_load_ps((float*)&exp_q3));
+        // FMA化: vfmadd213ps ymm6,ymm0,YMMWORD ptr exp_q3
+        ymm6 = _mm256_fmadd_ps(ymm6, ymm0, _mm256_load_ps((float*)&exp_q3));
+        // FMA化: vfmadd231ps ymm2,ymm4,ymm2
+        ymm2_ps = _mm256_fmadd_ps(ymm4, ymm2_ps, ymm2_ps);
         // vpslld ymm1,ymm1,23
         ymm1_i = _mm256_slli_epi32(ymm1_i, 23);
         // vsubps ymm6,ymm6,ymm2
         ymm6 = _mm256_sub_ps(ymm6, ymm2_ps);
-        // vrcpps ymm6,ymm6
-        ymm6 = _mm256_rcp_ps(ymm6);
-        // vmulps ymm2,ymm2,ymm6
-        ymm2_ps = _mm256_mul_ps(ymm2_ps, ymm6);
-        // vaddps ymm2,ymm2,ymm2
-        ymm2_ps = _mm256_add_ps(ymm2_ps, ymm2_ps);
-        // vaddps ymm0,ymm2,ymm15
-        ymm0 = _mm256_add_ps(ymm2_ps, ymm15);
+        // vdivps ymm2,ymm2,ymm6
+        ymm2_ps = _mm256_div_ps(ymm2_ps, ymm6);
+        // FMA化: vfmadd213ps ymm0,YMMWORD ptr exp_q3,ymm15
+        ymm0 = _mm256_fmadd_ps(ymm2_ps, _mm256_load_ps((float*)&exp_q3), ymm15);
         // vmulps ymm0,ymm0,ymm1
         ymm0 = _mm256_mul_ps(ymm0, _mm256_castsi256_ps(ymm1_i));
         // vmovaps YMMWORD ptr [rax],ymm0
@@ -2586,96 +2557,58 @@ extern "C" void weightedAvgElliottMul5_m16_FMA3(
     int rdi = 0;
 
     // レジスタの初期化
-    // vxorps ymm0,ymm0,ymm0
-    __m256 ymm0 = _mm256_setzero_ps();
-    // vxorps ymm1,ymm1,ymm1
-    __m256 ymm1 = _mm256_setzero_ps();
+    // AVX-512版と同じ16 laneの加算木に揃えるため、low/highを別々に積算する。
+    __m256 weight_low = _mm256_setzero_ps();
+    __m256 weight_high = _mm256_setzero_ps();
+    __m256 value_low = _mm256_setzero_ps();
+    __m256 value_high = _mm256_setzero_ps();
 
     // nloop_52
     while (rcx != 0) {
-        // vmovaps ymm2,YMMWORD ptr [rax+rdi*4]
-        __m256 ymm2 = _mm256_load_ps((float*)(rax + rdi * 4));
-        // vmovaps ymm4,YMMWORD ptr [rdx+rdi*4]
-        __m256 ymm4 = _mm256_load_ps((float*)(rdx + rdi * 4));
-        // vaddps ymm0,ymm0,ymm2
-        ymm0 = _mm256_add_ps(ymm0, ymm2);
-        // vandps ymm5,ymm4,ymm6
-        __m256 ymm5 = _mm256_and_ps(ymm4, ymm6);
-        // vaddps ymm5,ymm5,ymm7
-        ymm5 = _mm256_add_ps(ymm5, ymm7);
-        // vrcpps ymm5,ymm5
-        ymm5 = _mm256_rcp_ps(ymm5);
-        // vmulps ymm4,ymm4,ymm5
-        ymm4 = _mm256_mul_ps(ymm4, ymm5);
-        // vfmadd231ps ymm1,ymm2,ymm4
-        ymm1 = _mm256_fmadd_ps(ymm2, ymm4, ymm1);
+        const __m256 low_weight = _mm256_load_ps((float*)(rax + rdi * 4));
+        const __m256 low_output = _mm256_load_ps((float*)(rdx + rdi * 4));
+        const __m256 low_denominator = _mm256_add_ps(_mm256_and_ps(low_output, ymm6), ymm7);
+        const __m256 low_elliott = _mm256_div_ps(low_output, low_denominator);
+        weight_low = _mm256_add_ps(weight_low, low_weight);
+        value_low = _mm256_fmadd_ps(low_weight, low_elliott, value_low);
 
-        // vmovaps ymm2,YMMWORD ptr [rax+rdi*4+32]
-        ymm2 = _mm256_load_ps((float*)(rax + rdi * 4 + 32));
-        // vmovaps ymm4,YMMWORD ptr [rdx+rdi*4+32]
-        ymm4 = _mm256_load_ps((float*)(rdx + rdi * 4 + 32));
-        // vaddps ymm0,ymm0,ymm2
-        ymm0 = _mm256_add_ps(ymm0, ymm2);
-        // vandps ymm5,ymm4,ymm6
-        ymm5 = _mm256_and_ps(ymm4, ymm6);
-        // vaddps ymm5,ymm5,ymm7
-        ymm5 = _mm256_add_ps(ymm5, ymm7);
-        // vrcpps ymm5,ymm5
-        ymm5 = _mm256_rcp_ps(ymm5);
-        // vmulps ymm4,ymm4,ymm5
-        ymm4 = _mm256_mul_ps(ymm4, ymm5);
-        // vfmadd231ps ymm1,ymm2,ymm4
-        ymm1 = _mm256_fmadd_ps(ymm2, ymm4, ymm1);
+        const __m256 high_weight = _mm256_load_ps((float*)(rax + rdi * 4 + 32));
+        const __m256 high_output = _mm256_load_ps((float*)(rdx + rdi * 4 + 32));
+        const __m256 high_denominator = _mm256_add_ps(_mm256_and_ps(high_output, ymm6), ymm7);
+        const __m256 high_elliott = _mm256_div_ps(high_output, high_denominator);
+        weight_high = _mm256_add_ps(weight_high, high_weight);
+        value_high = _mm256_fmadd_ps(high_weight, high_elliott, value_high);
 
         rdi += r9;
         rcx -= r9;
     }
 
-    // vextractf128 xmm2,ymm0,1
-    __m128 xmm2 = _mm256_extractf128_ps(ymm0, 1);
-    // vextractf128 xmm3,ymm1,1
-    __m128 xmm3 = _mm256_extractf128_ps(ymm1, 1);
-    // vaddps xmm0,xmm0,xmm2
-    __m128 xmm0 = _mm_add_ps(_mm256_castps256_ps128(ymm0), xmm2);
-    // vaddps xmm1,xmm1,xmm3
-    __m128 xmm1 = _mm_add_ps(_mm256_castps256_ps128(ymm1), xmm3);
-
-    // vmovhlps xmm2,xmm2,xmm0
-    xmm2 = _mm_movehl_ps(xmm2, xmm0);
-    // vmovhlps xmm3,xmm3,xmm1
-    xmm3 = _mm_movehl_ps(xmm3, xmm1);
-    // vaddps xmm0,xmm0,xmm2
-    xmm0 = _mm_add_ps(xmm0, xmm2);
-    // vaddps xmm1,xmm1,xmm3
-    xmm1 = _mm_add_ps(xmm1, xmm3);
-    __m128i tmp2_i = _mm_shufflelo_epi16(_mm_castps_si128(xmm0), 14);
-    __m128i tmp3_i = _mm_shufflelo_epi16(_mm_castps_si128(xmm1), 14);
-    xmm2 = _mm_castsi128_ps(tmp2_i);
-    xmm3 = _mm_castsi128_ps(tmp3_i);
-    // vaddss xmm0,xmm0,xmm2
-    xmm0 = _mm_add_ss(xmm0, xmm2);
-    // vaddss xmm1,xmm1,xmm3
-    xmm1 = _mm_add_ss(xmm1, xmm3);
+    const __m256 weight_sum = _mm256_add_ps(weight_low, weight_high);
+    const __m256 value_sum = _mm256_add_ps(value_low, value_high);
+    __m128 xmm0 = _mm_add_ps(
+        _mm256_castps256_ps128(weight_sum), _mm256_extractf128_ps(weight_sum, 1));
+    __m128 xmm1 = _mm_add_ps(
+        _mm256_castps256_ps128(value_sum), _mm256_extractf128_ps(value_sum, 1));
+    xmm0 = _mm_hadd_ps(xmm0, xmm0);
+    xmm0 = _mm_hadd_ps(xmm0, xmm0);
+    xmm1 = _mm_hadd_ps(xmm1, xmm1);
+    xmm1 = _mm_hadd_ps(xmm1, xmm1);
 
     // vcomiss xmm0,dword ptr min_weight_sum
-    if (_mm_comile_ss(xmm0, _mm_load_ss((float*)&min_weight_sum))) {
+    if (!(_mm_cvtss_f32(xmm0) > _mm_cvtss_f32(_mm_load_ss((float*)&min_weight_sum)))) {
         // nodiv2:
         // vxorps xmm1,xmm1,xmm1
         xmm1 = _mm_setzero_ps();
     } else {
         // vmulss xmm1,xmm1,dword ptr five_f
         xmm1 = _mm_mul_ss(xmm1, _mm_load_ss((float*)&five_f));
-        // vrcpss xmm0,xmm0,xmm0
-        xmm0 = _mm_rcp_ss(xmm0);
-        // vmulss xmm1,xmm1,xmm0
-        xmm1 = _mm_mul_ss(xmm1, xmm0);
+        // vdivss xmm1,xmm1,xmm0
+        xmm1 = _mm_div_ss(xmm1, xmm0);
     }
 
     // finish_52:
-    // vmulss xmm1,xmm1,dword ptr[r8+4]
-    xmm1 = _mm_mul_ss(xmm1, _mm_load_ss(mstd + 1));
-    // vaddss xmm1,xmm1,dword ptr[r8]
-    xmm1 = _mm_add_ss(xmm1, _mm_load_ss(mstd));
+    // FMA化: vfmadd213ss xmm1,dword ptr[r8+4],dword ptr[r8]
+    xmm1 = _mm_fmadd_ss(xmm1, _mm_load_ss(mstd + 1), _mm_load_ss(mstd));
     // vaddss xmm1,xmm1,dword ptr[r8+12]
     xmm1 = _mm_add_ss(xmm1, _mm_load_ss(mstd + 3));
     // vmovss dword ptr[r8+12],xmm1

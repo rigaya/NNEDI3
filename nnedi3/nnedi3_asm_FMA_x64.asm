@@ -1519,54 +1519,49 @@ weightedAvgElliottMul5_m16_FMA3 proc public frame
 		xor rdi,rdi
 		vxorps ymm0,ymm0,ymm0
 		vxorps ymm1,ymm1,ymm1
+		vxorps ymm2,ymm2,ymm2
+		vxorps ymm3,ymm3,ymm3
 		
 nloop_52:
-		vmovaps ymm2,YMMWORD ptr [rax+rdi*4]
-		vmovaps ymm4,YMMWORD ptr [rdx+rdi*4]
-		vaddps ymm0,ymm0,ymm2
-		vandps ymm5,ymm4,ymm6
-		vaddps ymm5,ymm5,ymm7
-		vrcpps ymm5,ymm5
-		vmulps ymm4,ymm4,ymm5
-		vfmadd231ps ymm1,ymm2,ymm4
-		
-		vmovaps ymm2,YMMWORD ptr [rax+rdi*4+32]
-		vmovaps ymm4,YMMWORD ptr [rdx+rdi*4+32]
-		vaddps ymm0,ymm0,ymm2
-		vandps ymm5,ymm4,ymm6
-		vaddps ymm5,ymm5,ymm7
-		vrcpps ymm5,ymm5
-		vmulps ymm4,ymm4,ymm5
-		vfmadd231ps ymm1,ymm2,ymm4
+		vmovaps ymm5,YMMWORD ptr [rdx+rdi*4]
+		vandps ymm4,ymm5,ymm6
+		vaddps ymm4,ymm4,ymm7
+		vdivps ymm5,ymm5,ymm4
+		vaddps ymm0,ymm0,YMMWORD ptr [rax+rdi*4]
+		vfmadd231ps ymm2,ymm5,YMMWORD ptr [rax+rdi*4]
+
+		vmovaps ymm5,YMMWORD ptr [rdx+rdi*4+32]
+		vandps ymm4,ymm5,ymm6
+		vaddps ymm4,ymm4,ymm7
+		vdivps ymm5,ymm5,ymm4
+		vaddps ymm1,ymm1,YMMWORD ptr [rax+rdi*4+32]
+		vfmadd231ps ymm3,ymm5,YMMWORD ptr [rax+rdi*4+32]
 		
 		add rdi,r9
 		sub rcx,r9
 		jnz nloop_52
 		
-		vextractf128 xmm2,ymm0,1
-		vextractf128 xmm3,ymm1,1
-		vaddps xmm0,xmm0,xmm2
-		vaddps xmm1,xmm1,xmm3
-		
-		vmovhlps xmm2,xmm2,xmm0
-		vmovhlps xmm3,xmm3,xmm1
-		vaddps xmm0,xmm0,xmm2
-		vaddps xmm1,xmm1,xmm3
-		vpshuflw xmm2,xmm0,14
-		vpshuflw xmm3,xmm1,14
-		vaddss xmm0,xmm0,xmm2
-		vaddss xmm1,xmm1,xmm3
+		vaddps ymm0,ymm0,ymm1
+		vaddps ymm2,ymm2,ymm3
+		vextractf128 xmm1,ymm0,1
+		vextractf128 xmm3,ymm2,1
+		vaddps xmm0,xmm0,xmm1
+		vaddps xmm2,xmm2,xmm3
+		vhaddps xmm0,xmm0,xmm0
+		vhaddps xmm0,xmm0,xmm0
+		vhaddps xmm2,xmm2,xmm2
+		vhaddps xmm2,xmm2,xmm2
+		vmovaps xmm1,xmm2
 		vcomiss xmm0,dword ptr min_weight_sum
 		jbe nodiv2
 		vmulss xmm1,xmm1,dword ptr five_f
-		vrcpss xmm0,xmm0,xmm0
-		vmulss xmm1,xmm1,xmm0
+		vdivss xmm1,xmm1,xmm0
 		jmp finish_52
 nodiv2:
 		vxorps xmm1,xmm1,xmm1
 finish_52:
-		vmulss xmm1,xmm1,dword ptr[r8+4]
-		vaddss xmm1,xmm1,dword ptr[r8]
+		vmovss xmm2,dword ptr[r8+4]
+		vfmadd213ss xmm1,xmm2,dword ptr[r8]
 		vaddss xmm1,xmm1,dword ptr[r8+12]
 		vmovss dword ptr[r8+12],xmm1
 		
@@ -4988,7 +4983,6 @@ e1_m16_AVX2 proc public frame
 	.savexmm128 xmm8,32
 	vmovdqu XMMWORD ptr[rsp+48],xmm9
 	.savexmm128 xmm9,48
-	vmovdqu XMMWORD ptr[rsp+64],xmm10
 	.endprolog
 	
 		mov rax,rcx
@@ -5010,19 +5004,17 @@ eloop8:
 		vmovaps ymm0,YMMWORD ptr [rax]
 		vminps ymm0,ymm0,ymm3
 		vmaxps ymm0,ymm0,ymm4
-		vmulps ymm0,ymm0,ymm5
+		vmovaps ymm1,ymm6
+		vfmadd231ps ymm1,ymm0,ymm5
+		vpslld ymm2,ymm1,23
+		vsubps ymm1,ymm1,ymm6
+		vfmsub213ps ymm0,ymm5,ymm1
 		vmovaps ymm1,ymm0
-		vaddps ymm0,ymm0,ymm6
-		vpslld ymm2,ymm0,23
-		vsubps ymm0,ymm0,ymm6
-		vsubps ymm1,ymm1,ymm0
-		vmulps ymm0,ymm1,ymm7
-		vmulps ymm1,ymm1,ymm1
-		vmulps ymm1,ymm1,ymm8
-		vaddps ymm0,ymm0,ymm9
-		vaddps ymm0,ymm0,ymm1
-		vpaddd ymm0,ymm0,ymm2
-		vmovaps YMMWORD ptr [rax],ymm0
+		vfmadd213ps ymm1,ymm7,ymm9
+		vmulps ymm0,ymm0,ymm0
+		vfmadd231ps ymm1,ymm0,ymm8
+		vpaddd ymm1,ymm1,ymm2
+		vmovaps YMMWORD ptr [rax],ymm1
 		add rax,r9
 		sub rcx,rdx
 		jnz short eloop8
@@ -5091,39 +5083,32 @@ eloop4:
 		vmovaps ymm0,YMMWORD ptr [rax]		
 		vminps ymm0,ymm0,ymm7
 		vmaxps ymm0,ymm0,ymm8
-		vmulps ymm1,ymm0,ymm9
 		vxorps ymm2,ymm2,ymm2
-		vaddps ymm1,ymm1,ymm10
+		vmovaps ymm1,ymm10
+		vfmadd231ps ymm1,ymm0,ymm9
 		vcmpnltps ymm2,ymm2,ymm1
 		vpand ymm2,ymm2,ymm11
 		vcvttps2dq ymm1,ymm1
 		vpsubd ymm1,ymm1,ymm2
-		vmovaps ymm5,ymm13
 		vcvtdq2ps ymm3,ymm1
-		vmulps ymm4,ymm3,ymm12
-		vmulps ymm5,ymm5,ymm3
-		vsubps ymm0,ymm0,ymm4
-		vsubps ymm0,ymm0,ymm5
+		vfnmadd231ps ymm0,ymm3,ymm12
+		vfnmadd231ps ymm0,ymm3,ymm13
 		vpaddd ymm1,ymm1,YMMWORD ptr epi32_0x7f
 		vmovaps ymm2,ymm0
 		vmulps ymm0,ymm0,ymm0
-		vmulps ymm6,ymm0,ymm14
-		vmulps ymm4,ymm0,YMMWORD ptr exp_p0
-		vaddps ymm6,ymm6,YMMWORD ptr exp_q1
-		vaddps ymm4,ymm4,YMMWORD ptr exp_p1
-		vmulps ymm6,ymm6,ymm0
+		vmovaps ymm6,ymm14
+		vfmadd213ps ymm6,ymm0,YMMWORD ptr exp_q1
+		vmovaps ymm4,YMMWORD ptr exp_p0
+		vfmadd213ps ymm4,ymm0,YMMWORD ptr exp_p1
+		vfmadd213ps ymm6,ymm0,YMMWORD ptr exp_q2
 		vmulps ymm4,ymm4,ymm0
-		vaddps ymm6,ymm6,YMMWORD ptr exp_q2
-		vmulps ymm4,ymm4,ymm2
-		vmulps ymm6,ymm6,ymm0
-		vaddps ymm2,ymm2,ymm4
-		vaddps ymm6,ymm6,YMMWORD ptr exp_q3
+		vfmadd213ps ymm6,ymm0,YMMWORD ptr exp_q3
+		vfmadd231ps ymm2,ymm4,ymm2
 		vpslld ymm1,ymm1,23
 		vsubps ymm6,ymm6,ymm2
-		vrcpps ymm6,ymm6
-		vmulps ymm2,ymm2,ymm6
-		vaddps ymm2,ymm2,ymm2
-		vaddps ymm0,ymm2,ymm15
+		vdivps ymm2,ymm2,ymm6
+		vmovaps ymm0,ymm15
+		vfmadd231ps ymm0,ymm2,YMMWORD ptr exp_q3
 		vmulps ymm0,ymm0,ymm1		
 		vmovaps YMMWORD ptr [rax],ymm0
 		add rax,r8

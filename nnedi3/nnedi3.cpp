@@ -1712,11 +1712,15 @@ void dotProdS_C(const float *dataf, const float *weightsf, float *vals, const in
 
 	for (int i=0; i<n; i++)
 	{
-		int sum = 0, off = ((i>>2)<< 3)+(i&3);
+		uint32_t sumBits = 0;
+		const int off = ((i>>2)<< 3)+(i&3);
 
 		for (int j=0; j<len; j++)
-			sum += data[j]*weights[j];
+			sumBits += (uint32_t)((int32_t)data[j]*(int32_t)weights[j]);
 
+		int32_t sum;
+		// SIMD版と同じ32bit wrap結果を、未定義動作なしで符号付き値へ戻す。
+		std::memcpy(&sum,&sumBits,sizeof(sum));
 		vals[i] = sum*wf[off]*(*scale)+wf[off+4];
 		weights += len;
 	}
@@ -2855,6 +2859,13 @@ static PredictorKernels makePredictorKernels8(const KernelSet& backend,
 		floatDot = (asize%48)!=0 ? dotProd_m32_m16_AVX512 : dotProd_m48_m16_AVX512;
 	else if (plan.dot == PredictorDot::AVX512Int16)
 		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512 : dotProd_m48_m16_i16_AVX512;
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	{
+		e0 = e0_m16_AVX512;
+		e1 = e1_m16_AVX512;
+		e2 = e2_m16_AVX512;
+		weightedAverage = weightedAvgElliottMul5_m16_AVX512;
+	}
 #endif
 	if (plan.dot == PredictorDot::CInt16)
 		intDot = dotProdS_C;
@@ -3215,6 +3226,13 @@ static PredictorKernels makePredictorKernels16(const KernelSet& backend,
 		floatDot = (asize%48)!=0 ? dotProd_m32_m16_AVX512 : dotProd_m48_m16_AVX512;
 	else if (plan.dot == PredictorDot::AVX512Int16)
 		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512 : dotProd_m48_m16_i16_AVX512;
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	{
+		e0 = e0_m16_AVX512;
+		e1 = e1_m16_AVX512;
+		e2 = e2_m16_AVX512;
+		weightedAverage = weightedAvgElliottMul5_m16_AVX512;
+	}
 #endif
 	if (plan.dot == PredictorDot::CInt16)
 		intDot = dotProdS_C_16;
@@ -3471,6 +3489,13 @@ static PredictorKernels makePredictorKernels32(const KernelSet& backend,
 #if !defined(_WIN32) || defined(_WIN64)
 	if (plan.dot == PredictorDot::AVX512Float)
 		dotProd = (asize%48)!=0 ? dotProd_m32_m16_AVX512 : dotProd_m48_m16_AVX512;
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	{
+		e0 = e0_m16_AVX512;
+		e1 = e1_m16_AVX512;
+		e2 = e2_m16_AVX512;
+		weightedAverage = weightedAvgElliottMul5_m16_AVX512;
+	}
 #endif
 	return { extract, dotProd, (fapprox&12)==0 ? e2 : (fapprox&12)==4 ? e1 : e0,
 		weightedAverage };
