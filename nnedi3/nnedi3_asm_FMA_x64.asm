@@ -286,56 +286,48 @@ computeNetwork0_i16_AVX2 proc public frame
 		vshufps xmm0,xmm0,xmm2,136
 		vpaddd xmm0,xmm0,xmm6
 		vcvtdq2ps xmm0,xmm0
-		vmulps xmm0,xmm0,XMMWORD ptr [rdx+384]
-		vaddps xmm0,xmm0,XMMWORD ptr [rdx+400]
-		vmovaps xmm1,xmm0
-		vandps xmm0,xmm0,XMMWORD ptr sign_bits_f_zero_l
-		vaddps xmm0,xmm0,XMMWORD ptr ones_f
-		vrcpps xmm0,xmm0
-		vmulps xmm0,xmm0,xmm1
-		vpshufd xmm1,xmm0,0
-		vpshufd xmm2,xmm0,85
-		vpshufd xmm3,xmm0,170
-		vpshufd xmm4,xmm0,255
-		vmulps xmm1,xmm1,XMMWORD ptr [rdx+416]
-		vmulps xmm2,xmm2,XMMWORD ptr [rdx+416+16]
-		vmulps xmm3,xmm3,XMMWORD ptr [rdx+416+32]
-		vmulps xmm4,xmm4,XMMWORD ptr [rdx+416+48]
-		vaddps xmm1,xmm1,xmm2
-		vaddps xmm3,xmm3,xmm4
-		vaddps xmm1,xmm1,xmm3
-		vaddps xmm1,xmm1,XMMWORD ptr [rdx+416+64]
-		vmovaps xmm7,xmm1
-		vandps xmm1,xmm1,XMMWORD ptr sign_bits_f
+		vmovaps xmm1,XMMWORD ptr [rdx+384]
+		vfmadd213ps xmm0,xmm1,XMMWORD ptr [rdx+400]
 		vmovaps xmm3,xmm0
+		vandps xmm1,xmm0,XMMWORD ptr sign_bits_f
 		vaddps xmm1,xmm1,XMMWORD ptr ones_f
-		vrcpps xmm1,xmm1
-		vmulps xmm7,xmm7,xmm1
-		vpshufd xmm0,xmm0,0
-		vpshufd xmm1,xmm3,85
+		vdivps xmm0,xmm0,xmm1
+		vblendps xmm0,xmm0,xmm3,1
+		vmovaps xmm3,xmm0
+
+		vmovaps xmm1,XMMWORD ptr [rdx+416+64]
+		vpshufd xmm2,xmm3,0
+		vfmadd231ps xmm1,xmm2,XMMWORD ptr [rdx+416]
+		vpshufd xmm2,xmm3,85
+		vfmadd231ps xmm1,xmm2,XMMWORD ptr [rdx+416+16]
 		vpshufd xmm2,xmm3,170
-		vpshufd xmm3,xmm3,255
-		vmulps xmm0,xmm0,XMMWORD ptr [rdx+496]
-		vmulps xmm1,xmm1,XMMWORD ptr [rdx+496+16]
-		vmulps xmm2,xmm2,XMMWORD ptr [rdx+496+32]
-		vmulps xmm3,xmm3,XMMWORD ptr [rdx+496+48]
-		vpshufd xmm4,xmm7,0
-		vpshufd xmm5,xmm7,85
-		vpshufd xmm6,xmm7,170
-		vpshufd xmm7,xmm7,255
-		vmulps xmm4,xmm4,XMMWORD ptr [rdx+496+64]
-		vmulps xmm5,xmm5,XMMWORD ptr [rdx+496+80]
-		vmulps xmm6,xmm6,XMMWORD ptr [rdx+496+96]
-		vmulps xmm7,xmm7,XMMWORD ptr [rdx+496+112]
-		vaddps xmm0,xmm0,xmm1
-		vaddps xmm2,xmm2,xmm3
-		vaddps xmm4,xmm4,xmm5
-		vaddps xmm6,xmm6,xmm7
-		vaddps xmm0,xmm0,xmm2
-		vaddps xmm4,xmm4,xmm6
-		vaddps xmm0,xmm0,xmm4
+		vfmadd231ps xmm1,xmm2,XMMWORD ptr [rdx+416+32]
+		vpshufd xmm2,xmm3,255
+		vfmadd231ps xmm1,xmm2,XMMWORD ptr [rdx+416+48]
+
+		vmovaps xmm7,xmm1
+		vandps xmm2,xmm1,XMMWORD ptr sign_bits_f
+		vaddps xmm2,xmm2,XMMWORD ptr ones_f
+		vdivps xmm7,xmm7,xmm2
+
+		vmovaps xmm0,XMMWORD ptr [rdx+496+128]
+		vpshufd xmm2,xmm3,0
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+496]
+		vpshufd xmm2,xmm3,85
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+496+16]
+		vpshufd xmm2,xmm3,170
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+496+32]
+		vpshufd xmm2,xmm3,255
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+496+48]
+		vpshufd xmm2,xmm7,0
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+496+64]
+		vpshufd xmm2,xmm7,85
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+496+80]
+		vpshufd xmm2,xmm7,170
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+496+96]
+		vpshufd xmm2,xmm7,255
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+496+112]
 		mov rcx,r8
-		vaddps xmm0,xmm0,XMMWORD ptr [rdx+496+128]
 		vmovhlps xmm1,xmm1,xmm0
 		vmaxps xmm0,xmm0,xmm1
 		vpshuflw xmm1,xmm0,14
@@ -426,27 +418,23 @@ computeNetwork0new_AVX2 proc public frame
 		
 		vpaddd xmm0,xmm0,xmm6
 		vcvtdq2ps xmm0,xmm0		
-		vmulps xmm0,xmm0,XMMWORD ptr [rax+512]
-		vaddps xmm0,xmm0,XMMWORD ptr [rax+528]
-		vmovaps xmm1,xmm0
-		vandps xmm0,xmm0,XMMWORD ptr sign_bits_f
-		vaddps xmm0,xmm0,XMMWORD ptr ones_f
-		vrcpps xmm0,xmm0
-		vmulps xmm0,xmm0,xmm1
-		vpshufd xmm1,xmm0,0
-		vpshufd xmm2,xmm0,85
-		vpshufd xmm3,xmm0,170
-		vpshufd xmm4,xmm0,255
-		vmulps xmm1,xmm1,XMMWORD ptr [rax+544]
-		vmulps xmm2,xmm2,XMMWORD ptr [rax+560]
-		vmulps xmm3,xmm3,XMMWORD ptr [rax+576]
-		vmulps xmm4,xmm4,XMMWORD ptr [rax+592]
+		vmovaps xmm1,XMMWORD ptr [rax+512]
+		vfmadd213ps xmm0,xmm1,XMMWORD ptr [rax+528]
+		vmovaps xmm3,xmm0
+		vandps xmm1,xmm0,XMMWORD ptr sign_bits_f
+		vaddps xmm1,xmm1,XMMWORD ptr ones_f
+		vdivps xmm3,xmm3,xmm1
+		vmovaps xmm1,XMMWORD ptr [rax+608]
+		vpshufd xmm2,xmm3,0
+		vfmadd231ps xmm1,xmm2,XMMWORD ptr [rax+544]
+		vpshufd xmm2,xmm3,85
+		vfmadd231ps xmm1,xmm2,XMMWORD ptr [rax+560]
+		vpshufd xmm2,xmm3,170
+		vfmadd231ps xmm1,xmm2,XMMWORD ptr [rax+576]
+		vpshufd xmm2,xmm3,255
+		vfmadd231ps xmm1,xmm2,XMMWORD ptr [rax+592]
 		vpxor xmm0,xmm0,xmm0
-		vaddps xmm1,xmm1,xmm2
-		vaddps xmm3,xmm3,xmm4
-		vaddps xmm1,xmm1,xmm3
 		mov rcx,r8
-		vaddps xmm1,xmm1,XMMWORD ptr [rax+608]
 		vcmpps xmm1,xmm1,xmm0,1
 		vpackssdw xmm1,xmm1,xmm0
 		vpacksswb xmm1,xmm1,xmm0
@@ -792,9 +780,8 @@ xloop_32:
 		vpsadbw xmm4,xmm4,xmm6
 		vmulps ymm0,ymm0,ymm7
 		vmovdqa xmm3,xmm4
-		vmulps ymm2,ymm2,ymm8
+		vfnmadd231ps ymm0,ymm2,ymm8
 		vpsrldq xmm4,xmm4,8
-		vsubps ymm0,ymm0,ymm2	
 		vpaddusw xmm4,xmm4,xmm3
 		vmovaps YMMWORD ptr[rsi],ymm0
 		vpaddusw xmm5,xmm5,xmm4		
@@ -1140,12 +1127,14 @@ uc2s64_AVX2 endp
 
 computeNetwork0_FMA3 proc public frame
 
-	sub rsp,32
-	.allocstack 32
+	sub rsp,48
+	.allocstack 48
 	vmovdqu XMMWORD ptr[rsp],xmm6
 	.savexmm128 xmm6,0
 	vmovdqu XMMWORD ptr[rsp+16],xmm7
 	.savexmm128 xmm7,16
+	vmovdqu XMMWORD ptr[rsp+32],xmm8
+	.savexmm128 xmm8,32
 	.endprolog
 	
 		mov rax,1
@@ -1157,10 +1146,10 @@ computeNetwork0_FMA3 proc public frame
 		
 		vmovaps ymm4,YMMWORD ptr [rcx+32]
 		
-		vfmadd231ps ymm0,ymm4,YMMWORD ptr [rdx+128]
-		vfmadd231ps ymm1,ymm4,YMMWORD ptr [rdx+160]
-		vfmadd231ps ymm2,ymm4,YMMWORD ptr [rdx+192]
-		vfmadd231ps ymm3,ymm4,YMMWORD ptr [rdx+224]
+		vmulps ymm5,ymm4,YMMWORD ptr [rdx+128]
+		vmulps ymm6,ymm4,YMMWORD ptr [rdx+160]
+		vmulps ymm7,ymm4,YMMWORD ptr [rdx+192]
+		vmulps ymm8,ymm4,YMMWORD ptr [rdx+224]
 		
 		vmovaps ymm4,YMMWORD ptr [rcx+64]
 		
@@ -1171,10 +1160,10 @@ computeNetwork0_FMA3 proc public frame
 		
 		vmovaps ymm4,YMMWORD ptr [rcx+96]
 		
-		vfmadd231ps ymm0,ymm4,YMMWORD ptr [rdx+384]
-		vfmadd231ps ymm1,ymm4,YMMWORD ptr [rdx+416]
-		vfmadd231ps ymm2,ymm4,YMMWORD ptr [rdx+448]
-		vfmadd231ps ymm3,ymm4,YMMWORD ptr [rdx+480]
+		vfmadd231ps ymm5,ymm4,YMMWORD ptr [rdx+384]
+		vfmadd231ps ymm6,ymm4,YMMWORD ptr [rdx+416]
+		vfmadd231ps ymm7,ymm4,YMMWORD ptr [rdx+448]
+		vfmadd231ps ymm8,ymm4,YMMWORD ptr [rdx+480]
 		
 		vmovaps ymm4,YMMWORD ptr [rcx+128]
 		
@@ -1185,10 +1174,15 @@ computeNetwork0_FMA3 proc public frame
 		
 		vmovaps ymm4,YMMWORD ptr [rcx+160]
 		
-		vfmadd231ps ymm0,ymm4,YMMWORD ptr [rdx+640]
-		vfmadd231ps ymm1,ymm4,YMMWORD ptr [rdx+672]
-		vfmadd231ps ymm2,ymm4,YMMWORD ptr [rdx+704]
-		vfmadd231ps ymm3,ymm4,YMMWORD ptr [rdx+736]		
+		vfmadd231ps ymm5,ymm4,YMMWORD ptr [rdx+640]
+		vfmadd231ps ymm6,ymm4,YMMWORD ptr [rdx+672]
+		vfmadd231ps ymm7,ymm4,YMMWORD ptr [rdx+704]
+		vfmadd231ps ymm8,ymm4,YMMWORD ptr [rdx+736]
+
+		vaddps ymm0,ymm0,ymm5
+		vaddps ymm1,ymm1,ymm6
+		vaddps ymm2,ymm2,ymm7
+		vaddps ymm3,ymm3,ymm8
 		
 		vhaddps ymm0,ymm0,ymm1
 		vhaddps ymm2,ymm2,ymm3
@@ -1199,55 +1193,46 @@ computeNetwork0_FMA3 proc public frame
 		
 		vaddps xmm0,xmm0,XMMWORD ptr [rdx+768]
 		
-		vmovaps xmm1,xmm0
-		vandps xmm0,xmm0,XMMWORD ptr sign_bits_f_zero_l
-		vaddps xmm0,xmm0,XMMWORD ptr ones_f
-		vrcpps xmm0,xmm0
-		vmulps xmm0,xmm0,xmm1
-		
-		vpshufd xmm1,xmm0,0
-		vpshufd xmm2,xmm0,85
-		vpshufd xmm3,xmm0,170
-		vpshufd xmm4,xmm0,255
-		
-		vmulps xmm1,xmm1,XMMWORD ptr [rdx+784]
-		vfmadd231ps xmm1,xmm2,XMMWORD ptr [rdx+784+16]
-		vmulps xmm3,xmm3,XMMWORD ptr [rdx+784+32]
-		vfmadd231ps xmm3,xmm4,XMMWORD ptr [rdx+784+48]
-		vaddps xmm1,xmm1,xmm3
-		vaddps xmm1,xmm1,XMMWORD ptr [rdx+784+64]
-		
-		vmovaps xmm7,xmm1
-		vandps xmm1,xmm1, XMMWORD ptr sign_bits_f
 		vmovaps xmm3,xmm0
+		vandps xmm1,xmm0,XMMWORD ptr sign_bits_f
 		vaddps xmm1,xmm1,XMMWORD ptr ones_f
-		vrcpps xmm1,xmm1
-		vmulps xmm7,xmm7,xmm1
+		vdivps xmm0,xmm0,xmm1
+		vblendps xmm0,xmm0,xmm3,1
+		vmovaps xmm3,xmm0
 
-		vpshufd xmm0,xmm0,0
-		vpshufd xmm1,xmm3,85
+		vmovaps xmm1,XMMWORD ptr [rdx+784+64]
+		vpshufd xmm2,xmm3,0
+		vfmadd231ps xmm1,xmm2,XMMWORD ptr [rdx+784]
+		vpshufd xmm2,xmm3,85
+		vfmadd231ps xmm1,xmm2,XMMWORD ptr [rdx+784+16]
 		vpshufd xmm2,xmm3,170
-		vpshufd xmm3,xmm3,255
-		vmulps xmm0,xmm0,XMMWORD ptr [rdx+864]
-		vfmadd231ps xmm0,xmm1,XMMWORD ptr [rdx+864+16]
-		vmulps xmm2,xmm2,XMMWORD ptr [rdx+864+32]
-		vfmadd231ps xmm2,xmm3,XMMWORD ptr [rdx+864+48]
-		
-		vpshufd xmm4,xmm7,0
-		vpshufd xmm5,xmm7,85
-		vpshufd xmm6,xmm7,170
-		vpshufd xmm7,xmm7,255
-		
-		vmulps xmm4,xmm4,XMMWORD ptr [rdx+864+64]
-		vfmadd231ps xmm4,xmm5,XMMWORD ptr [rdx+864+80]
-		vmulps xmm6,xmm6,XMMWORD ptr [rdx+864+96]
-		vfmadd231ps xmm6,xmm7,XMMWORD ptr [rdx+864+112]		
-		
-		vaddps xmm0,xmm0,xmm2
-		vaddps xmm4,xmm4,xmm6
-		vaddps xmm0,xmm0,xmm4
+		vfmadd231ps xmm1,xmm2,XMMWORD ptr [rdx+784+32]
+		vpshufd xmm2,xmm3,255
+		vfmadd231ps xmm1,xmm2,XMMWORD ptr [rdx+784+48]
+
+		vmovaps xmm7,xmm1
+		vandps xmm2,xmm1,XMMWORD ptr sign_bits_f
+		vaddps xmm2,xmm2,XMMWORD ptr ones_f
+		vdivps xmm7,xmm7,xmm2
+
+		vmovaps xmm0,XMMWORD ptr [rdx+864+128]
+		vpshufd xmm2,xmm3,0
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+864]
+		vpshufd xmm2,xmm3,85
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+864+16]
+		vpshufd xmm2,xmm3,170
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+864+32]
+		vpshufd xmm2,xmm3,255
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+864+48]
+		vpshufd xmm2,xmm7,0
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+864+64]
+		vpshufd xmm2,xmm7,85
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+864+80]
+		vpshufd xmm2,xmm7,170
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+864+96]
+		vpshufd xmm2,xmm7,255
+		vfmadd231ps xmm0,xmm2,XMMWORD ptr [rdx+864+112]
 		mov rcx,r8
-		vaddps xmm0,xmm0,XMMWORD ptr [rdx+864+128]
 		vmovhlps xmm1,xmm1,xmm0
 		vmaxps xmm0,xmm0,xmm1
 		vpshuflw xmm1,xmm0,14
@@ -1257,9 +1242,10 @@ computeNetwork0_FMA3 proc public frame
 finish_1a:
 		mov BYTE PTR[rcx],al
 				
+	vmovdqu xmm8,XMMWORD ptr[rsp+32]
 	vmovdqu xmm7,XMMWORD ptr[rsp+16]
 	vmovdqu xmm6,XMMWORD ptr[rsp]
-	add rsp,32		
+	add rsp,48
 		
 	vzeroupper
 		
@@ -1826,21 +1812,20 @@ suite0:
 		vpshuflw xmm1,xmm5,14
 		vcvtsi2ss xmm7,xmm7,eax
 		vpaddd xmm5,xmm5,xmm1
-		vrcpss xmm7,xmm7,xmm7
 		vcvtdq2ps xmm4,xmm4
 		vcvtdq2ps xmm5,xmm5
 		mov rax,mstd
-		vmulss xmm4,xmm4,xmm7
-		vmulss xmm5,xmm5,xmm7
+		vdivss xmm4,xmm4,xmm7
+		vdivss xmm5,xmm5,xmm7
 		vmovss dword ptr[rax],xmm4
-		vmulss xmm4,xmm4,xmm4
-		vsubss xmm5,xmm5,xmm4
+		vfnmadd231ss xmm5,xmm4,xmm4
 		vcomiss xmm5,dword ptr flt_epsilon_sse
 		jbe short novarjmp_2
-		vrsqrtss xmm5,xmm5,xmm5
-		vrcpss xmm4,xmm4,xmm5
-		vmovss dword ptr[rax+4],xmm4
-		vmovss dword ptr[rax+8],xmm5
+		vsqrtss xmm5,xmm5,xmm5
+		vmovss xmm4,dword ptr ones_f_32
+		vdivss xmm4,xmm4,xmm5
+		vmovss dword ptr[rax+4],xmm5
+		vmovss dword ptr[rax+8],xmm4
 		jmp short finish_4
 novarjmp_2:
 		vmovss dword ptr[rax+4],xmm6
@@ -2020,12 +2005,16 @@ input equ qword ptr[rbp+56]
 	.pushreg rdi
 	push r12
 	.pushreg r12
-	sub rsp,32
-	.allocstack 32
+	sub rsp,64
+	.allocstack 64
 	vmovdqa XMMWORD ptr[rsp],xmm6
 	.savexmm128 xmm6,0
 	vmovdqa XMMWORD ptr[rsp+16],xmm7
 	.savexmm128 xmm7,16
+	vmovdqa XMMWORD ptr[rsp+32],xmm8
+	.savexmm128 xmm8,32
+	vmovdqa XMMWORD ptr[rsp+48],xmm9
+	.savexmm128 xmm9,48
 	.endprolog
 		
 		mov rax,rcx
@@ -2043,6 +2032,8 @@ input equ qword ptr[rbp+56]
 		
 		vpxor ymm5,ymm5,ymm5
 		vpxor ymm6,ymm6,ymm6
+		vpxor ymm8,ymm8,ymm8
+		vpxor ymm9,ymm9,ymm9
 		vpxor ymm4,ymm4,ymm4
 				
 yloop2a:
@@ -2062,10 +2053,19 @@ xloop2a:
 		vcvtdq2ps ymm2,ymm2
 		vmovaps YMMWORD PTR[rsi],ymm0
 		vmovaps YMMWORD PTR[rsi+rdi*4],ymm2
+		test rcx,8
+		jnz short high_lanes_2a
 		vaddps ymm5,ymm5,ymm0
 		vaddps ymm5,ymm5,ymm2
 		vfmadd231ps ymm6,ymm0,ymm0
 		vfmadd231ps ymm6,ymm2,ymm2
+		jmp short accumulated_2a
+high_lanes_2a:
+		vaddps ymm8,ymm8,ymm0
+		vaddps ymm8,ymm8,ymm2
+		vfmadd231ps ymm9,ymm0,ymm0
+		vfmadd231ps ymm9,ymm2,ymm2
+accumulated_2a:
 		add rcx,r11
 		add rsi,r12
 		cmp rcx,rdi
@@ -2074,37 +2074,34 @@ xloop2a:
 		lea rdx,[rdx+rbx*4]
 		lea rsi,[rsi+rdi*4]
 		sub r8d,r10d
-		jnz short yloop2a
+		jnz yloop2a
 		
+		vaddps ymm5,ymm5,ymm8
+		vaddps ymm6,ymm6,ymm9
 		vextractf128 xmm0,ymm5,1
 		vextractf128 xmm2,ymm6,1
 		vaddps xmm5,xmm5,xmm0
 		vaddps xmm6,xmm6,xmm2
 		
 		mov eax,r9d		
-		vmovhlps xmm0,xmm0,xmm5
-		vmovhlps xmm1,xmm1,xmm6
 		mul edi
-		vaddps xmm5,xmm5,xmm0
-		vaddps xmm6,xmm6,xmm1
+		vhaddps xmm5,xmm5,xmm5
+		vhaddps xmm6,xmm6,xmm6
+		vhaddps xmm5,xmm5,xmm5
+		vhaddps xmm6,xmm6,xmm6
 		vcvtsi2ss xmm7,xmm7,eax
-		vpshuflw xmm0,xmm5,14
-		vpshuflw xmm1,xmm6,14
-		vrcpss xmm7,xmm7,xmm7
-		vaddss xmm5,xmm5,xmm0
-		vaddss xmm6,xmm6,xmm1
 		mov rax,mstd
-		vmulss xmm5,xmm5,xmm7
-		vmulss xmm6,xmm6,xmm7
+		vdivss xmm5,xmm5,xmm7
+		vdivss xmm6,xmm6,xmm7
 		vmovss dword ptr[rax],xmm5
-		vmulss xmm5,xmm5,xmm5
-		vsubss xmm6,xmm6,xmm5
+		vfnmadd231ss xmm6,xmm5,xmm5
 		vcomiss xmm6,dword ptr flt_epsilon_sse
 		jbe short novarjmpa
-		vrsqrtss xmm6,xmm6,xmm6
-		vrcpss xmm5,xmm5,xmm6
-		vmovss dword ptr[rax+4],xmm5
-		vmovss dword ptr[rax+8],xmm6
+		vsqrtss xmm6,xmm6,xmm6
+		vmovss xmm5,dword ptr ones_f_32
+		vdivss xmm5,xmm5,xmm6
+		vmovss dword ptr[rax+4],xmm6
+		vmovss dword ptr[rax+8],xmm5
 		jmp short finish_3a
 novarjmpa:
 		vmovss dword ptr[rax+4],xmm4
@@ -2112,9 +2109,11 @@ novarjmpa:
 finish_3a:
 		vmovss dword ptr[rax+12],xmm4
 				
+	vmovdqa xmm9,XMMWORD ptr[rsp+48]
+	vmovdqa xmm8,XMMWORD ptr[rsp+32]
 	vmovdqa xmm7,XMMWORD ptr[rsp+16]
 	vmovdqa xmm6,XMMWORD ptr[rsp]	
-	add rsp,32	
+	add rsp,64
 		
 	vzeroupper
 		
@@ -2449,12 +2448,16 @@ input equ qword ptr[rbp+56]
 	.pushreg rdi
 	push r12
 	.pushreg r12
-	sub rsp,32
-	.allocstack 32
+	sub rsp,64
+	.allocstack 64
 	vmovdqa XMMWORD ptr[rsp],xmm6
 	.savexmm128 xmm6,0
 	vmovdqa XMMWORD ptr[rsp+16],xmm7
 	.savexmm128 xmm7,16
+	vmovdqa XMMWORD ptr[rsp+32],xmm8
+	.savexmm128 xmm8,32
+	vmovdqa XMMWORD ptr[rsp+48],xmm9
+	.savexmm128 xmm9,48
 	.endprolog
 		
 		mov rax,rcx
@@ -2472,10 +2475,12 @@ input equ qword ptr[rbp+56]
 		
 		vpxor ymm5,ymm5,ymm5
 		vpxor ymm6,ymm6,ymm6
+		vpxor ymm8,ymm8,ymm8
+		vpxor ymm9,ymm9,ymm9
 		vpxor ymm4,ymm4,ymm4
 		
 		test rax,15
-		jnz short yloop2_16a_		
+		jnz yloop2_16a_
 		
 yloop2_16a:
 		xor rcx,rcx
@@ -2492,10 +2497,19 @@ xloop2_16a:
 		vcvtdq2ps ymm2,ymm2
 		vmovaps YMMWORD PTR[rsi],ymm0
 		vmovaps YMMWORD PTR[rsi+rdi*4],ymm2
+		test rcx,8
+		jnz short high_lanes_2_16a
 		vaddps ymm5,ymm5,ymm0
 		vaddps ymm5,ymm5,ymm2
 		vfmadd231ps ymm6,ymm0,ymm0
 		vfmadd231ps ymm6,ymm2,ymm2
+		jmp short accumulated_2_16a
+high_lanes_2_16a:
+		vaddps ymm8,ymm8,ymm0
+		vaddps ymm8,ymm8,ymm2
+		vfmadd231ps ymm9,ymm0,ymm0
+		vfmadd231ps ymm9,ymm2,ymm2
+accumulated_2_16a:
 		add rcx,r11
 		add rsi,r12
 		cmp rcx,rdi
@@ -2504,8 +2518,8 @@ xloop2_16a:
 		lea rdx,[rdx+rbx*4]
 		lea rsi,[rsi+rdi*4]
 		sub r8d,r10d
-		jnz short yloop2_16a
-		jmp short suite1a
+		jnz yloop2_16a
+		jmp suite1a
 		
 yloop2_16a_:
 		xor rcx,rcx
@@ -2522,10 +2536,19 @@ xloop2_16a_:
 		vcvtdq2ps ymm2,ymm2
 		vmovaps YMMWORD PTR[rsi],ymm0
 		vmovaps YMMWORD PTR[rsi+rdi*4],ymm2
+		test rcx,8
+		jnz short high_lanes_2_16a_
 		vaddps ymm5,ymm5,ymm0
 		vaddps ymm5,ymm5,ymm2
 		vfmadd231ps ymm6,ymm0,ymm0
 		vfmadd231ps ymm6,ymm2,ymm2
+		jmp short accumulated_2_16a_
+high_lanes_2_16a_:
+		vaddps ymm8,ymm8,ymm0
+		vaddps ymm8,ymm8,ymm2
+		vfmadd231ps ymm9,ymm0,ymm0
+		vfmadd231ps ymm9,ymm2,ymm2
+accumulated_2_16a_:
 		add rcx,r11
 		add rsi,r12
 		cmp rcx,rdi
@@ -2534,38 +2557,35 @@ xloop2_16a_:
 		lea rdx,[rdx+rbx*4]
 		lea rsi,[rsi+rdi*4]
 		sub r8d,r10d
-		jnz short yloop2_16a_		
+		jnz yloop2_16a_
 		
 suite1a:		
+		vaddps ymm5,ymm5,ymm8
+		vaddps ymm6,ymm6,ymm9
 		vextractf128 xmm0,ymm5,1
 		vextractf128 xmm2,ymm6,1
 		vaddps xmm5,xmm5,xmm0
 		vaddps xmm6,xmm6,xmm2
 
 		mov eax,r9d		
-		vmovhlps xmm0,xmm0,xmm5
-		vmovhlps xmm1,xmm1,xmm6
 		mul edi
-		vaddps xmm5,xmm5,xmm0
-		vaddps xmm6,xmm6,xmm1
+		vhaddps xmm5,xmm5,xmm5
+		vhaddps xmm6,xmm6,xmm6
+		vhaddps xmm5,xmm5,xmm5
+		vhaddps xmm6,xmm6,xmm6
 		vcvtsi2ss xmm7,xmm7,eax
-		vpshuflw xmm0,xmm5,14
-		vpshuflw xmm1,xmm6,14
-		vrcpss xmm7,xmm7,xmm7
-		vaddss xmm5,xmm5,xmm0
-		vaddss xmm6,xmm6,xmm1
 		mov rax,mstd
-		vmulss xmm5,xmm5,xmm7
-		vmulss xmm6,xmm6,xmm7
+		vdivss xmm5,xmm5,xmm7
+		vdivss xmm6,xmm6,xmm7
 		vmovss dword ptr[rax],xmm5
-		vmulss xmm5,xmm5,xmm5
-		vsubss xmm6,xmm6,xmm5
+		vfnmadd231ss xmm6,xmm5,xmm5
 		vcomiss xmm6,dword ptr flt_epsilon_sse
 		jbe short novarjmp_16a
-		vrsqrtss xmm6,xmm6,xmm6
-		vrcpss xmm5,xmm5,xmm6
-		vmovss dword ptr[rax+4],xmm5
-		vmovss dword ptr[rax+8],xmm6
+		vsqrtss xmm6,xmm6,xmm6
+		vmovss xmm5,dword ptr ones_f_32
+		vdivss xmm5,xmm5,xmm6
+		vmovss dword ptr[rax+4],xmm6
+		vmovss dword ptr[rax+8],xmm5
 		jmp short finish_3_16a
 novarjmp_16a:
 		vmovss dword ptr[rax+4],xmm4
@@ -2573,9 +2593,11 @@ novarjmp_16a:
 finish_3_16a:
 		vmovss dword ptr[rax+12],xmm4
 				
+	vmovdqa xmm9,XMMWORD ptr[rsp+48]
+	vmovdqa xmm8,XMMWORD ptr[rsp+32]
 	vmovdqa xmm7,XMMWORD ptr[rsp+16]
 	vmovdqa xmm6,XMMWORD ptr[rsp]	
-	add rsp,32	
+	add rsp,64
 	
 	vzeroupper
 		
@@ -2925,12 +2947,16 @@ input equ qword ptr[rbp+56]
 	.pushreg rdi
 	push r12
 	.pushreg r12
-	sub rsp,32
-	.allocstack 32
+	sub rsp,64
+	.allocstack 64
 	vmovdqa XMMWORD ptr[rsp],xmm6
 	.savexmm128 xmm6,0
 	vmovdqa XMMWORD ptr[rsp+16],xmm7
 	.savexmm128 xmm7,16
+	vmovdqa XMMWORD ptr[rsp+32],xmm8
+	.savexmm128 xmm8,32
+	vmovdqa XMMWORD ptr[rsp+48],xmm9
+	.savexmm128 xmm9,48
 	.endprolog
 		
 		mov rax,rcx
@@ -2947,6 +2973,8 @@ input equ qword ptr[rbp+56]
 		lea rdx,[rax+rbx*2]
 		vpxor ymm5,ymm5,ymm5
 		vpxor ymm6,ymm6,ymm6
+		vpxor ymm8,ymm8,ymm8
+		vpxor ymm9,ymm9,ymm9
 		vpxor ymm3,ymm3,ymm3
 		
 		test rax,31
@@ -2959,10 +2987,19 @@ xloop2_32a:
 		vmovaps ymm2,YMMWORD PTR[rdx+4*rcx]		
 		vmovaps YMMWORD PTR[rsi],ymm0
 		vmovaps YMMWORD PTR[rsi+rdi*4],ymm2
+		test rcx,8
+		jnz short high_lanes_2_32a
 		vaddps ymm5,ymm5,ymm0
 		vaddps ymm5,ymm5,ymm2
 		vfmadd231ps ymm6,ymm0,ymm0
 		vfmadd231ps ymm6,ymm2,ymm2
+		jmp short accumulated_2_32a
+high_lanes_2_32a:
+		vaddps ymm8,ymm8,ymm0
+		vaddps ymm8,ymm8,ymm2
+		vfmadd231ps ymm9,ymm0,ymm0
+		vfmadd231ps ymm9,ymm2,ymm2
+accumulated_2_32a:
 		add rcx,r11
 		add rsi,r12
 		cmp rcx,rdi
@@ -2981,10 +3018,19 @@ xloop2_32a_:
 		vmovups ymm2,YMMWORD PTR[rdx+4*rcx]		
 		vmovaps YMMWORD PTR[rsi],ymm0
 		vmovaps YMMWORD PTR[rsi+rdi*4],ymm2
+		test rcx,8
+		jnz short high_lanes_2_32a_
 		vaddps ymm5,ymm5,ymm0
 		vaddps ymm5,ymm5,ymm2
 		vfmadd231ps ymm6,ymm0,ymm0
 		vfmadd231ps ymm6,ymm2,ymm2
+		jmp short accumulated_2_32a_
+high_lanes_2_32a_:
+		vaddps ymm8,ymm8,ymm0
+		vaddps ymm8,ymm8,ymm2
+		vfmadd231ps ymm9,ymm0,ymm0
+		vfmadd231ps ymm9,ymm2,ymm2
+accumulated_2_32a_:
 		add rcx,r11
 		add rsi,r12
 		cmp rcx,rdi
@@ -2996,35 +3042,32 @@ xloop2_32a_:
 		jnz short yloop2_32a_
 		
 suite2a:		
+		vaddps ymm5,ymm5,ymm8
+		vaddps ymm6,ymm6,ymm9
 		vextractf128 xmm0,ymm5,1
 		vextractf128 xmm2,ymm6,1
 		vaddps xmm5,xmm5,xmm0
 		vaddps xmm6,xmm6,xmm2
 
 		mov eax,r9d		
-		vmovhlps xmm0,xmm0,xmm5
-		vmovhlps xmm1,xmm1,xmm6
 		mul edi
-		vaddps xmm5,xmm5,xmm0
-		vaddps xmm6,xmm6,xmm1
+		vhaddps xmm5,xmm5,xmm5
+		vhaddps xmm6,xmm6,xmm6
+		vhaddps xmm5,xmm5,xmm5
+		vhaddps xmm6,xmm6,xmm6
 		vcvtsi2ss xmm7,xmm7,eax
-		vpshuflw xmm0,xmm5,14
-		vpshuflw xmm1,xmm6,14
-		vrcpss xmm7,xmm7,xmm7
-		vaddss xmm5,xmm5,xmm0
-		vaddss xmm6,xmm6,xmm1
 		mov rax,mstd
-		vmulss xmm5,xmm5,xmm7
-		vmulss xmm6,xmm6,xmm7
+		vdivss xmm5,xmm5,xmm7
+		vdivss xmm6,xmm6,xmm7
 		vmovss dword ptr[rax],xmm5
-		vmulss xmm5,xmm5,xmm5
-		vsubss xmm6,xmm6,xmm5
+		vfnmadd231ss xmm6,xmm5,xmm5
 		vcomiss xmm6,dword ptr flt_epsilon_sse
 		jbe short novarjmp_32a
-		vrsqrtss xmm6,xmm6,xmm6
-		vrcpss xmm5,xmm5,xmm6
-		vmovss dword ptr[rax+4],xmm5
-		vmovss dword ptr[rax+8],xmm6
+		vsqrtss xmm6,xmm6,xmm6
+		vmovss xmm5,dword ptr ones_f_32
+		vdivss xmm5,xmm5,xmm6
+		vmovss dword ptr[rax+4],xmm6
+		vmovss dword ptr[rax+8],xmm5
 		jmp short finish_3_32a
 novarjmp_32a:
 		vmovss dword ptr[rax+4],xmm3
@@ -3032,9 +3075,11 @@ novarjmp_32a:
 finish_3_32a:
 		vmovss dword ptr[rax+12],xmm3
 		
+	vmovdqa xmm9,XMMWORD ptr[rsp+48]
+	vmovdqa xmm8,XMMWORD ptr[rsp+32]
 	vmovdqa xmm7,XMMWORD ptr[rsp+16]
 	vmovdqa xmm6,XMMWORD ptr[rsp]	
-	add rsp,32
+	add rsp,64
 	
 	vzeroupper
 		
@@ -3374,21 +3419,20 @@ suite3:
 		vpaddd xmm5,xmm5,xmm1
 		vpaddd xmm4,xmm4,xmm2
 		
-		vrcpss xmm7,xmm7,xmm7
 		vcvtdq2ps xmm4,xmm4
 		vcvtdq2ps xmm5,xmm5
 		mov rax,mstd
-		vmulss xmm4,xmm4,xmm7
-		vmulss xmm5,xmm5,xmm7
+		vdivss xmm4,xmm4,xmm7
+		vdivss xmm5,xmm5,xmm7
 		vmovss dword ptr[rax],xmm4
-		vmulss xmm4,xmm4,xmm4
-		vsubss xmm5,xmm5,xmm4
+		vfnmadd231ss xmm5,xmm4,xmm4
 		vcomiss xmm5,dword ptr flt_epsilon_sse
 		jbe short novarjmp_2_16
-		vrsqrtss xmm5,xmm5,xmm5
-		vrcpss xmm4,xmm4,xmm5
-		vmovss dword ptr[rax+4],xmm4
-		vmovss dword ptr[rax+8],xmm5
+		vsqrtss xmm5,xmm5,xmm5
+		vmovss xmm4,dword ptr ones_f_32
+		vdivss xmm4,xmm4,xmm5
+		vmovss dword ptr[rax+4],xmm5
+		vmovss dword ptr[rax+8],xmm4
 		jmp short finish_4_16
 novarjmp_2_16:
 		vmovss dword ptr[rax+4],xmm6
@@ -5132,6 +5176,50 @@ eloop4:
 		ret
 		
 e2_m16_AVX2 endp
+
+
+castScale_FMA3 proc public frame
+
+val_max equ dword ptr[rsp+40]
+
+	.endprolog
+
+		vmovss xmm0,dword ptr[rcx+12]
+		vmovss xmm1,dword ptr[rdx]
+		vfmadd213ss xmm0,xmm1,dword ptr sse_half
+		vcvttss2si eax,xmm0
+		mov rcx,r8
+		cmp eax,val_max
+		cmovnl eax,val_max
+		cmp eax,r9d
+		cmovng eax,r9d
+		mov byte ptr[rcx],al
+
+		ret
+
+castScale_FMA3 endp
+
+
+castScale_FMA3_16 proc public frame
+
+val_max equ dword ptr[rsp+40]
+
+	.endprolog
+
+		vmovss xmm0,dword ptr[rcx+12]
+		vmovss xmm1,dword ptr[rdx]
+		vfmadd213ss xmm0,xmm1,dword ptr sse_half
+		vcvttss2si eax,xmm0
+		mov rcx,r8
+		cmp eax,val_max
+		cmovnl eax,val_max
+		cmp eax,r9d
+		cmovng eax,r9d
+		mov word ptr[rcx],ax
+
+		ret
+
+castScale_FMA3_16 endp
 
 
 end

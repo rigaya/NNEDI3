@@ -11,7 +11,11 @@ nnedi3_avx2_sources = [
 ]
 
 nnedi3_avx512_sources = [
-  'nnedi3_intrinsic_AVX512.cpp'
+  'nnedi3_intrinsic_AVX512.cpp',
+  'nnedi3_intrinsic_AVX512_extract.cpp',
+  'nnedi3_intrinsic_AVX512_pixel_convert.cpp',
+  'nnedi3_intrinsic_AVX512_prescreener.cpp',
+  'nnedi3_intrinsic_AVX512_process.cpp',
 ]
 
 nnedi3_headers = [
@@ -21,6 +25,10 @@ nnedi3_headers = [
   'nnedi3_backend.h',
   'nnedi3_intrinsic.h',
   'nnedi3_intrinsic_AVX512.h',
+  'nnedi3_intrinsic_AVX512_extract.h',
+  'nnedi3_intrinsic_AVX512_pixel_convert.h',
+  'nnedi3_intrinsic_AVX512_prescreener.h',
+  'nnedi3_intrinsic_AVX512_process.h',
   'nnedi3_kernel.h',
   'PlanarFrame.h',
   'resource.h',

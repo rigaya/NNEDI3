@@ -22,6 +22,9 @@
 */
 
 #include "PlanarFrame.h"
+#if !defined(_WIN32) || defined(_WIN64)
+#include "nnedi3_intrinsic_AVX512_pixel_convert.h"
+#endif
 #include <stdint.h>
 #if defined(_WIN32) || defined(_WIN64)
 #include <intrin.h>
@@ -189,6 +192,7 @@ PlanarFrame::PlanarFrame(void)
 	planar_1 = planar_2 = planar_3 = planar_4 = NULL;
 	useSIMD = true;
 	useAVX = true;
+	useAVX512 = false;
 	cpu = CPUCheckForExtensions();
 	isRGBPfamily = false;
 	isAlphaChannel = false;
@@ -206,6 +210,7 @@ PlanarFrame::PlanarFrame(VideoInfo &viInfo)
 	planar_1 = planar_2 = planar_3 = planar_4 = NULL;
 	useSIMD = true;
 	useAVX = true;
+	useAVX512 = false;
 	cpu = CPUCheckForExtensions();
 	alloc_ok=allocSpace(viInfo);
 }
@@ -737,6 +742,7 @@ PlanarFrame& PlanarFrame::operator=(PlanarFrame &ob2)
 {
 	useSIMD = ob2.useSIMD;
 	useAVX = ob2.useAVX;
+	useAVX512 = ob2.useAVX512;
 	cpu = ob2.cpu;
 	ypitch = ob2.ypitch;
 	yheight = ob2.yheight;
@@ -758,6 +764,13 @@ PlanarFrame& PlanarFrame::operator=(PlanarFrame &ob2)
 void PlanarFrame::convYUY2to422(const uint8_t *src,uint8_t *py,uint8_t *pu,uint8_t *pv,int pitch1,int pitch2Y,int pitch2UV,
 	int width,int height)
 {
+#if !defined(_WIN32) || defined(_WIN64)
+	if (useAVX512)
+	{
+		convYUY2to422_AVX512(src,py,pu,pv,pitch1,pitch2Y,pitch2UV,width,height);
+		return;
+	}
+#endif
 #if defined(_WIN32) || defined(_WIN64)
 	if (((cpu&CPUF_AVX)!=0) && useAVX && (((size_t(src)|pitch1)&15)==0))
 		convYUY2to422_AVX(src,py,pu,pv,pitch1,pitch2Y,pitch2UV,(width+7)>>3,height);
@@ -819,6 +832,13 @@ void PlanarFrame::convYUY2to422(const uint8_t *src,uint8_t *py,uint8_t *pu,uint8
 void PlanarFrame::conv422toYUY2(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *dst,int pitch1Y,int pitch1UV,int pitch2,
 	int width,int height)
 {
+#if !defined(_WIN32) || defined(_WIN64)
+	if (useAVX512)
+	{
+		conv422toYUY2_AVX512(py,pu,pv,dst,pitch1Y,pitch1UV,pitch2,width,height);
+		return;
+	}
+#endif
 #if defined(_WIN32) || defined(_WIN64)
 	const int w_8=(width+7)>>3;
 	const int modulo2=pitch2-(w_8 << 4);
@@ -881,6 +901,13 @@ void PlanarFrame::conv422toYUY2(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *dst
 void PlanarFrame::convRGB24to444(const uint8_t *src,uint8_t *py,uint8_t *pu,uint8_t *pv,int pitch1,int pitch2Y,int pitch2UV,
 	int width,int height)
 {
+#if !defined(_WIN32) || defined(_WIN64)
+	if (useAVX512)
+	{
+		convRGB24to444_AVX512(src,py,pu,pv,pitch1,pitch2Y,pitch2UV,width,height);
+		return;
+	}
+#endif
 	for (int y=0; y<height; ++y)
 	{
 		int x_3=0;
@@ -903,6 +930,13 @@ void PlanarFrame::convRGB24to444(const uint8_t *src,uint8_t *py,uint8_t *pu,uint
 void PlanarFrame::conv444toRGB24(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *dst,int pitch1Y,int pitch1UV,int pitch2,
 	int width,int height)
 {
+#if !defined(_WIN32) || defined(_WIN64)
+	if (useAVX512)
+	{
+		conv444toRGB24_AVX512(py,pu,pv,dst,pitch1Y,pitch1UV,pitch2,width,height);
+		return;
+	}
+#endif
 	dst += (height-1)*pitch2;
 	for (int y=0; y<height; ++y)
 	{

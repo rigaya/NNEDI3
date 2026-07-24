@@ -470,6 +470,10 @@
     <ClInclude Include="nnedi3_backend.h" />
     <ClInclude Include="nnedi3_intrinsic.h" />
     <ClInclude Include="nnedi3_intrinsic_AVX512.h" />
+    <ClInclude Include="nnedi3_intrinsic_AVX512_extract.h" />
+    <ClInclude Include="nnedi3_intrinsic_AVX512_pixel_convert.h" />
+    <ClInclude Include="nnedi3_intrinsic_AVX512_prescreener.h" />
+    <ClInclude Include="nnedi3_intrinsic_AVX512_process.h" />
     <ClInclude Include="nnedi3_kernel.h" />
     <ClInclude Include="PlanarFrame.h" />
     <ClInclude Include="resource.h" />
@@ -480,7 +484,27 @@
   <ItemGroup>
     <ClCompile Include="nnedi3.cpp" />
     <ClCompile Include="nnedi3_intrinsic_AVX512.cpp">
-      <AdditionalOptions Condition="'$(Platform)'=='x64'">/arch:AVX512 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Platform)'=='x64'">/arch:AVX512 /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <WholeProgramOptimization Condition="'$(Platform)'=='x64'">false</WholeProgramOptimization>
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="nnedi3_intrinsic_AVX512_extract.cpp">
+      <AdditionalOptions Condition="'$(Platform)'=='x64'">/arch:AVX512 /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <WholeProgramOptimization Condition="'$(Platform)'=='x64'">false</WholeProgramOptimization>
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="nnedi3_intrinsic_AVX512_pixel_convert.cpp">
+      <AdditionalOptions Condition="'$(Platform)'=='x64'">/arch:AVX512 /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <WholeProgramOptimization Condition="'$(Platform)'=='x64'">false</WholeProgramOptimization>
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="nnedi3_intrinsic_AVX512_prescreener.cpp">
+      <AdditionalOptions Condition="'$(Platform)'=='x64'">/arch:AVX512 /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <WholeProgramOptimization Condition="'$(Platform)'=='x64'">false</WholeProgramOptimization>
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="nnedi3_intrinsic_AVX512_process.cpp">
+      <AdditionalOptions Condition="'$(Platform)'=='x64'">/arch:AVX512 /utf-8 %(AdditionalOptions)</AdditionalOptions>
       <WholeProgramOptimization Condition="'$(Platform)'=='x64'">false</WholeProgramOptimization>
       <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
     </ClCompile>

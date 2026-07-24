@@ -24,8 +24,13 @@
 #include "nnedi3_backend.h"
 #include "nnedi3_intrinsic.h"
 #include "nnedi3_intrinsic_AVX512.h"
+#include "nnedi3_intrinsic_AVX512_extract.h"
+#include "nnedi3_intrinsic_AVX512_prescreener.h"
+#include "nnedi3_intrinsic_AVX512_process.h"
 #include <stdint.h>
+#include <cmath>
 #include <cstring>
+#include <limits>
 #include <string>
 
 #if _MSC_VER
@@ -483,6 +488,10 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 		FreeData();
 		env->ThrowError("nnedi3: Error while allocating planar dstPF!");
 	}
+	const bool useAVX512PixelConversion =
+		kernelSet.requested_backend == nnedi3_backend::Backend::AVX512;
+	srcPF->setAVX512(useAVX512PixelConversion);
+	dstPF->setAVX512(useAVX512PixelConversion);
 
 	const int dims0 = 49*4+5*4+9*4;
 	const int dims0new = 4*65+4*5;
@@ -571,7 +580,20 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 
 		j_a=0,j_b=0;
-		if (nnedi3_backend::uses_avx2_layout(kernelSet.prescreener_weights) && bits_per_pixel <= 14)
+		if (nnedi3_backend::uses_avx512_prescreener_layout(
+			kernelSet.prescreener_weights) && bits_per_pixel <= 14)
+		{
+			for (int j=0; j<4; j++)
+			{
+				for (int k=0; k<64; k++)
+					offt2[j_a+k] = ((k>>5)<<7)+j_b+(k&31);
+
+				j_a+=64;
+				j_b+=32;
+			}
+		}
+		else if (nnedi3_backend::uses_avx2_layout(
+			kernelSet.prescreener_weights) && bits_per_pixel <= 14)
 		{
 			for (int j=0; j<4; j++)
 			{
@@ -734,7 +756,17 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 				memcpy(rs,weights0,dims0*sizeof(float));
 				j_a=0;
-				if (nnedi3_backend::uses_avx2_layout(kernelSet.prescreener_weights))
+				if (nnedi3_backend::uses_avx512_prescreener_layout(
+					kernelSet.prescreener_weights))
+				{
+					for (int j=0; j<4; j++)
+					{
+						for (int k=0; k<48; k++)
+							ws[k<32 ? j*32+k : 128+j*16+(k-32)] = rs[j_a+k];
+						j_a+=48;
+					}
+				}
+				else if (nnedi3_backend::uses_avx2_layout(kernelSet.prescreener_weights))
 				{
 					for (int j=0; j<4; j++)
 					{
@@ -788,7 +820,18 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 				memcpy(rf,weights0,dims0*sizeof(float));
 				j_a=0;
-				if (nnedi3_backend::uses_avx2_layout(kernelSet.prescreener_weights))
+				if (nnedi3_backend::uses_avx512_prescreener_layout(
+					kernelSet.prescreener_weights))
+				{
+					for (int j=0; j<4; j++)
+					{
+						for (int k=0; k<48; k++)
+							wf[((k >> 4) << 6)+j_b+(k&15)] = rf[j_a+k];
+						j_a+=48;
+						j_b+=16;
+					}
+				}
+				else if (nnedi3_backend::uses_avx2_layout(kernelSet.prescreener_weights))
 				{
 					for (int j=0; j<4; j++)
 					{
@@ -1370,11 +1413,15 @@ void nnedi3::copyPad(int n, int fn, IScriptEnvironment *env)
 			{
 				if (vi.IsRGB24())
 				{
+					const int64_t doubledPitch = -static_cast<int64_t>(src->GetPitch()) * 2;
+					if (doubledPitch < std::numeric_limits<int>::min()
+						|| doubledPitch > std::numeric_limits<int>::max())
+						env->ThrowError("nnedi3: RGB24 pitch is too large!");
 					srcPF->convRGB24to444(src->GetReadPtr()+(vi.height-1-off)*src->GetPitch(),
 						srcPF->GetPtr(0)+(srcPF->GetPitch(0)*(6+off)+32),
 						srcPF->GetPtr(1)+(srcPF->GetPitch(1)*(6+off)+32),
 						srcPF->GetPtr(2)+(srcPF->GetPitch(2)*(6+off)+32),
-						-src->GetPitch() << 1,srcPF->GetPitch(0) << 1,srcPF->GetPitch(1) << 1,
+						static_cast<int>(doubledPitch),srcPF->GetPitch(0) << 1,srcPF->GetPitch(1) << 1,
 						vi.width,vi.height>>1);
 				}
 			}
@@ -1405,11 +1452,15 @@ void nnedi3::copyPad(int n, int fn, IScriptEnvironment *env)
 			{
 				if (vi.IsRGB24())
 				{
+					const int64_t reversedPitch = -static_cast<int64_t>(src->GetPitch());
+					if (reversedPitch < std::numeric_limits<int>::min()
+						|| reversedPitch > std::numeric_limits<int>::max())
+						env->ThrowError("nnedi3: RGB24 pitch is too large!");
 					srcPF->convRGB24to444(src->GetReadPtr()+((vi.height>>1)-1)*src->GetPitch(),
 						srcPF->GetPtr(0)+(srcPF->GetPitch(0)*(6+off)+32),
 						srcPF->GetPtr(1)+(srcPF->GetPitch(1)*(6+off)+32),
 						srcPF->GetPtr(2)+(srcPF->GetPitch(2)*(6+off)+32),
-						-src->GetPitch(),srcPF->GetPitch(0) << 1,srcPF->GetPitch(1) << 1,
+						static_cast<int>(reversedPitch),srcPF->GetPitch(0) << 1,srcPF->GetPitch(1) << 1,
 						vi.width,vi.height>>1);
 				}
 			}
@@ -1946,6 +1997,18 @@ static PrescreenerKernels8 makePrescreenerKernels8(const KernelSet& backend)
 	}
 	if (backend.has_fma3) result.oldNetworkFloat = computeNetwork0_FMA3;
 #endif
+#if !defined(_WIN32) || defined(_WIN64)
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	{
+		result.oldInputInt16 = uc2s48_AVX512;
+		result.oldNetworkInt16 = computeNetwork0_i16_AVX512;
+		result.oldInputFloat = uc2f48_AVX512;
+		result.oldNetworkFloat = computeNetwork0_AVX512;
+		result.newInput = uc2s64_AVX512;
+		result.newNetwork = computeNetwork0new_AVX512;
+		result.processLine = processLine0_AVX512;
+	}
+#endif
 	return result;
 }
 
@@ -2292,7 +2355,7 @@ struct PrescreenerKernels16
 
 static PrescreenerKernels16 makePrescreenerKernels16(const KernelSet& backend, const uint8_t bits)
 {
-	PrescreenerKernels16 result = { uc2s48_C_16, computeNetwork0_i16_C,
+	PrescreenerKernels16 result = { uc2s48_C_16, computeNetwork0_i16_C_16,
 		uc2f48_C_16, computeNetwork0_C, uc2s64_C_16, computeNetwork0new_C_16, processLine0_C_16 };
 #if SSE2_ASM_AVAILABLE
 	if (backend.has_sse2)
@@ -2324,9 +2387,26 @@ static PrescreenerKernels16 makePrescreenerKernels16(const KernelSet& backend, c
 	}
 	if (backend.has_fma3) result.oldNetworkFloat = computeNetwork0_FMA3;
 #endif
+#if !defined(_WIN32) || defined(_WIN64)
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	{
+		result.oldInputFloat = uc2f48_AVX512_16;
+		result.oldNetworkFloat = computeNetwork0_AVX512;
+		if (bits <= 14)
+		{
+			result.oldInputInt16 = uc2s48_AVX512_16;
+			result.oldNetworkInt16 = computeNetwork0_i16_AVX512;
+			result.newInput = uc2s64_AVX512_16;
+			result.newNetwork = computeNetwork0new_AVX512;
+		}
+		result.processLine = processLine0_AVX512_16;
+	}
+#endif
 	if (bits > 14)
 	{
-		result.oldNetworkInt16 = computeNetwork0_i16_C;
+		result.oldInputInt16 = uc2s48_C_16;
+		result.oldNetworkInt16 = computeNetwork0_i16_C_16;
+		result.newInput = uc2s64_C_16;
 		result.newNetwork = computeNetwork0new_C_16;
 	}
 	return result;
@@ -2577,6 +2657,14 @@ static PrescreenerKernels32 makePrescreenerKernels32(const KernelSet& backend)
 #if AVX2_ASM_AVAILABLE
 	if (backend.has_avx2) result.processLine = processLine0_AVX2_32;
 	if (backend.has_fma3) result.network = computeNetwork0_FMA3;
+#endif
+#if !defined(_WIN32) || defined(_WIN64)
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	{
+		result.input = uc2f48_AVX512_32;
+		result.network = computeNetwork0_AVX512;
+		result.processLine = processLine0_AVX512_32;
+	}
 #endif
 	return result;
 }
@@ -2861,6 +2949,8 @@ static PredictorKernels makePredictorKernels8(const KernelSet& backend,
 		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512 : dotProd_m48_m16_i16_AVX512;
 	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
 	{
+		intExtract = extract_m8_i16_AVX512;
+		floatExtract = extract_m8_AVX512;
 		e0 = e0_m16_AVX512;
 		e1 = e1_m16_AVX512;
 		e2 = e2_m16_AVX512;
@@ -2950,8 +3040,18 @@ void evalFunc_2(void *ps)
 		NNPixels+=ystart*NNPixels_pitch;
 
 		const uint8_t *srcpp = srcp-((ydia-1)*src_pitch+xdiad2m1);
+		void (*castScale)(const float*,const float*,uint8_t*,const uint32_t,const uint32_t) = NULL;
 #if AVX_ASM_AVAILABLE
-		if (backend.has_avx)
+		if (backend.has_avx) castScale = castScale_AVX;
+#endif
+#if AVX2_ASM_AVAILABLE
+		if (backend.has_fma3) castScale = castScale_FMA3;
+#endif
+#if !defined(_WIN32) || defined(_WIN64)
+		if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+			castScale = castScale_AVX512;
+#endif
+		if (castScale != NULL)
 		{
 			for (int y=ystart; y<ystop; y+=2)
 			{
@@ -2968,7 +3068,7 @@ void evalFunc_2(void *ps)
 						expf(temp,nns);
 						wae5(temp,nns,mstd);
 					}
-					castScale_AVX(mstd,&scale,dstp+x,val_min,val_max);
+					castScale(mstd,&scale,dstp+x,val_min,val_max);
 				}
 				srcpp += src_pitch2;
 				dstp += dst_pitch2;
@@ -2976,7 +3076,6 @@ void evalFunc_2(void *ps)
 			}
 		}
 		else
-#endif
 #if SSE2_ASM_AVAILABLE
 		if (backend.has_sse2)
 		{
@@ -3122,7 +3221,8 @@ void extract_m8_i16_C_16_4(const uint8_t *srcp, const int stride, const int xdia
 	const float scale = (float)(1.0/(double)(xdia*ydia));
 
 	mstd[0] = sum*scale;
-	const double tmp = (double)sumsq*scale-(double)mstd[0]*mstd[0];
+	const double meanSquare = (double)mstd[0]*mstd[0];
+	const double tmp = std::fma((double)sumsq,(double)scale,-meanSquare);
 	mstd[3] = 0.0f;
 	if (tmp<=FLT_EPSILON) mstd[1] = mstd[2] = 0.0f;
 	else
@@ -3228,6 +3328,9 @@ static PredictorKernels makePredictorKernels16(const KernelSet& backend,
 		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512 : dotProd_m48_m16_i16_AVX512;
 	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
 	{
+		intExtract = bits<=10 ? extract_m8_i16_AVX512_16_10
+			: bits<=14 ? extract_m8_i16_AVX512_16 : extract_m8_i16_C_16;
+		floatExtract = extract_m8_AVX512_16;
 		e0 = e0_m16_AVX512;
 		e1 = e1_m16_AVX512;
 		e2 = e2_m16_AVX512;
@@ -3318,8 +3421,18 @@ void evalFunc_2_16(void *ps)
 		const uint8_t *srcpp = srcp-((ydia-1)*src_pitch+(xdiad2m1 << 1));
 		NNPixels+=ystart*NNPixels_pitch;
 
+		void (*castScale)(const float*,const float*,uint16_t*,const uint32_t,const uint32_t) = NULL;
 #if AVX_ASM_AVAILABLE
-		if (backend.has_avx)
+		if (backend.has_avx) castScale = castScale_AVX_16;
+#endif
+#if AVX2_ASM_AVAILABLE
+		if (backend.has_fma3) castScale = castScale_FMA3_16;
+#endif
+#if !defined(_WIN32) || defined(_WIN64)
+		if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+			castScale = castScale_AVX512_16;
+#endif
+		if (castScale != NULL)
 		{
 			for (int y=ystart; y<ystop; y+=2)
 			{
@@ -3338,7 +3451,7 @@ void evalFunc_2_16(void *ps)
 						expf(temp,nns);
 						wae5(temp,nns,mstd);
 					}
-					castScale_AVX_16(mstd,&scale,dst0+x,val_min,val_max);
+					castScale(mstd,&scale,dst0+x,val_min,val_max);
 				}
 				srcpp += src_pitch2;
 				dstp += dst_pitch2;
@@ -3346,7 +3459,6 @@ void evalFunc_2_16(void *ps)
 			}
 		}
 		else
-#endif
 #if SSE2_ASM_AVAILABLE
 		if (backend.has_sse2)
 		{
@@ -3491,6 +3603,7 @@ static PredictorKernels makePredictorKernels32(const KernelSet& backend,
 		dotProd = (asize%48)!=0 ? dotProd_m32_m16_AVX512 : dotProd_m48_m16_AVX512;
 	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
 	{
+		extract = extract_m8_AVX512_32;
 		e0 = e0_m16_AVX512;
 		e1 = e1_m16_AVX512;
 		e2 = e2_m16_AVX512;

@@ -40,6 +40,7 @@ enum class WeightLayout {
     LegacySIMD,
     AVX2,
     AVX512,
+    AVX512Prescreener,
 };
 
 enum class SelectionError {
@@ -168,7 +169,9 @@ constexpr KernelSet make_kernel_set(const Backend backend) {
     const bool has_fma3 = kernel_backend == Backend::AVX2FMA3;
     const WeightLayout layout = has_avx2 ? WeightLayout::AVX2
         : has_sse2 ? WeightLayout::LegacySIMD : WeightLayout::NeuronMajor;
-    return {backend, kernel_backend, layout, layout, has_sse2, has_sse41,
+    const WeightLayout prescreenerLayout = backend == Backend::AVX512
+        ? WeightLayout::AVX512Prescreener : layout;
+    return {backend, kernel_backend, prescreenerLayout, layout, has_sse2, has_sse41,
         has_avx, has_avx2, has_fma3};
 }
 
@@ -229,6 +232,10 @@ constexpr bool uses_avx2_layout(const WeightLayout layout) {
 
 constexpr bool uses_avx512_layout(const WeightLayout layout) {
     return layout == WeightLayout::AVX512;
+}
+
+constexpr bool uses_avx512_prescreener_layout(const WeightLayout layout) {
+    return layout == WeightLayout::AVX512Prescreener;
 }
 
 }
