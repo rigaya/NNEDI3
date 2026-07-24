@@ -1962,8 +1962,9 @@ void evalFunc_1(void *ps)
 #endif
 #if SSE2_ASM_AVAILABLE
 			processLine0=processLine0_SSE2;
-#endif
+#else
 			processLine0=processLine0_C;
+#endif
 		}
 	}
 
@@ -1985,8 +1986,9 @@ void evalFunc_1(void *ps)
 #endif
 #if SSE2_ASM_AVAILABLE
 					uc2s=uc2s48_SSE2;
-#endif
+#else
 					uc2s=uc2s48_C;
+#endif
 				}
 			}
 			if (opt==1) computeNetwork0=computeNetwork0_i16_C;
@@ -2003,8 +2005,9 @@ void evalFunc_1(void *ps)
 #endif
 #if SSE2_ASM_AVAILABLE
 					computeNetwork0=computeNetwork0_i16_SSE2;
-#endif
+#else
 					computeNetwork0=computeNetwork0_i16_C;
+#endif
 				}
 			}
 		}
@@ -2024,8 +2027,9 @@ void evalFunc_1(void *ps)
 #endif
 #if SSE2_ASM_AVAILABLE
 					uc2s=uc2f48_SSE2;
-#endif
+#else
 					uc2s=uc2f48_C;
+#endif
 				}
 			}
 			if (opt==1) computeNetwork0=computeNetwork0_C;
@@ -2042,8 +2046,9 @@ void evalFunc_1(void *ps)
 #endif
 #if SSE2_ASM_AVAILABLE
 					computeNetwork0=computeNetwork0_SSE2;
-#endif
+#else
 					computeNetwork0=computeNetwork0_C;
+#endif
 				}
 			}
 		}
@@ -2065,8 +2070,9 @@ void evalFunc_1(void *ps)
 #endif
 #if SSE2_ASM_AVAILABLE
 				uc2s=uc2s64_SSE2;
-#endif
+#else
 				uc2s=uc2s64_C;
+#endif
 			}
 		}
 		if (opt==1) computeNetwork0=computeNetwork0new_C;
@@ -2083,8 +2089,9 @@ void evalFunc_1(void *ps)
 #endif
 #if SSE2_ASM_AVAILABLE
 				computeNetwork0=computeNetwork0new_SSE2;
-#endif
+#else
 				computeNetwork0=computeNetwork0new_C;
+#endif
 			}
 		}
 	}
@@ -2411,8 +2418,9 @@ void evalFunc_1_16(void *ps)
 #endif
 #if SSE2_ASM_AVAILABLE
 			processLine0=processLine0_SSE2_16;
-#endif
+#else
 			processLine0=processLine0_C_16;
+#endif
 		}
 	}
 
@@ -2435,8 +2443,9 @@ void evalFunc_1_16(void *ps)
 #endif
 #if SSE2_ASM_AVAILABLE
 					computeNetwork0=computeNetwork0_i16_SSE2;
-#endif
+#else
 					computeNetwork0=computeNetwork0_i16_C;
+#endif
 				}
 			}
 		}
@@ -2457,8 +2466,9 @@ void evalFunc_1_16(void *ps)
 					{
 #if SSE2_ASM_AVAILABLE
 						uc2s=uc2f48_SSE2_16;
-#endif
+#else
 						uc2s=uc2f48_C_16;
+#endif
 					}
 				}
 			}
@@ -2476,8 +2486,9 @@ void evalFunc_1_16(void *ps)
 #endif
 #if SSE2_ASM_AVAILABLE
 					computeNetwork0=computeNetwork0_SSE2;
-#endif
+#else
 					computeNetwork0=computeNetwork0_C;
+#endif
 				}
 			}
 		}
@@ -2501,8 +2512,9 @@ void evalFunc_1_16(void *ps)
 #endif
 #if SSE2_ASM_AVAILABLE
 				computeNetwork0=computeNetwork0new_SSE2;
-#endif
+#else
 				computeNetwork0=computeNetwork0new_C;
+#endif
 			}
 		}
 	}
@@ -2716,8 +2728,9 @@ void evalFunc_1_32(void *ps)
 #endif
 #if SSE2_ASM_AVAILABLE
 			processLine0=processLine0_SSE2_32;
-#endif
+#else
 			processLine0=processLine0_C_32;
+#endif
 		}
 	}
 
@@ -2735,8 +2748,9 @@ void evalFunc_1_32(void *ps)
 #endif
 #if SSE2_ASM_AVAILABLE
 			computeNetwork0=computeNetwork0_SSE2;
-#endif
+#else
 			computeNetwork0=computeNetwork0_C;
+#endif
 		}
 	}
 	uc2s=uc2f48_C_32;
