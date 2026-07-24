@@ -1,6 +1,7 @@
 ﻿#ifndef __ThreadPoolInterface_H__
 #define __ThreadPoolInterface_H__
 
+#include <condition_variable>
 #include <mutex>
 #include <vector>
 #include "rgy_event.h"
@@ -65,6 +66,7 @@ class ThreadPoolInterface
 
 	std::mutex CriticalSection;
 	std::mutex ghMutexResources;
+	std::condition_variable PoolStateChanged;
 	bool CSectionOk;
 	std::vector<unique_event> JobsEnded;
 	std::vector<unique_event> ThreadPoolFree;
@@ -102,4 +104,3 @@ class ThreadPoolInterface
 };
 
 #endif // __ThreadPoolInterface_H__
-

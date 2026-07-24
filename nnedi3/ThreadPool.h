@@ -4,6 +4,8 @@
 #include "rgy_osdep.h"
 #include "KUtil.h"
 #include "rgy_event.h"
+#include <algorithm>
+#include <atomic>
 #include <thread>
 #include <vector>
 
@@ -16,15 +18,20 @@ typedef struct _MT_Data_Thread
 	Public_MT_Data_Thread *MTData;
 	volatile uint8_t f_process,thread_Id;
 	volatile HANDLE nextJob,jobFinished;
+	std::atomic<bool> stop;
 } MT_Data_Thread;
+
+
+typedef struct _Logical_CPU
+{
+	uint32_t id;
+} Logical_CPU;
 
 
 typedef struct _Arch_CPU
 {
-	uint8_t NbPhysCore,NbLogicCPU;
-	uint8_t NbHT[64];
-	uintptr_t ProcMask[64];
-	uintptr_t FullMask;
+	std::vector<std::vector<Logical_CPU>> cores;
+	std::vector<Logical_CPU> allowedCPUs;
 } Arch_CPU;
 
 
@@ -51,15 +58,16 @@ class ThreadPool
 	bool GetThreadPoolStatus(void) {return(Status_Ok);}
 	uint8_t GetCurrentThreadAllocated(void) {return(CurrentThreadsAllocated);}
 	uint8_t GetCurrentThreadUsed(void) {return(CurrentThreadsUsed);}
-	uint8_t GetLogicalCPUNumber(void) {return(CPU.NbLogicCPU);}
-	uint8_t GetPhysicalCoreNumber(void) {return(CPU.NbPhysCore);}
+	uint8_t GetLogicalCPUNumber(void) {return((uint8_t)std::min(CPU.allowedCPUs.size(), (size_t)MAX_MT_THREADS));}
+	uint8_t GetPhysicalCoreNumber(void) {return((uint8_t)std::min(CPU.cores.size(), (size_t)MAX_MT_THREADS));}
 
 	protected :
 
 	MT_Data_Thread MT_Thread[MAX_MT_THREADS];
 	std::vector<unique_event> nextJob, jobFinished;
 	std::vector<std::thread> threads;
-	uintptr_t ThreadMask[MAX_MT_THREADS];
+	uint32_t ThreadCPU[MAX_MT_THREADS];
+	bool ThreadAffinitySet[MAX_MT_THREADS];
 	volatile bool ThreadSleep[MAX_MT_THREADS];
 
 	volatile bool Status_Ok;

@@ -2,6 +2,10 @@
 //
 
 #include "ThreadPool.h"
+#include <algorithm>
+#include <climits>
+#include <cerrno>
+#include <map>
 #include <thread>
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -12,27 +16,10 @@
 #include <cstdio>
 #include <utility>
 #include <vector>
+#include <unistd.h>
 #define myfree(ptr) if (ptr!=NULL) { free(ptr); ptr=NULL;}
 #define myCloseHandle(ptr) if (ptr!=NULL) { CloseEvent(ptr); ptr=NULL;}
 #endif
-
-
-// Helper function to count set bits in the processor mask.
-static uint8_t CountSetBits(uintptr_t bitMask)
-{
-    DWORD LSHIFT = sizeof(uintptr_t)*8 - 1;
-    uint8_t bitSetCount = 0;
-    uintptr_t bitTest = (uintptr_t)1 << LSHIFT;    
-    DWORD i;
-    
-    for (i = 0; i <= LSHIFT; ++i)
-    {
-        bitSetCount += ((bitMask & bitTest)?1:0);
-        bitTest/=2;
-    }
-
-    return bitSetCount;
-}
 
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -42,13 +29,9 @@ static void Get_CPU_Info(Arch_CPU& cpu)
     PSYSTEM_LOGICAL_PROCESSOR_INFORMATION buffer=NULL;
     PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ptr=NULL;
     DWORD returnLength=0;
-    uint8_t logicalProcessorCount=0;
-    uint8_t processorCoreCount=0;
     DWORD byteOffset=0;
 
-	cpu.NbLogicCPU=0;
-	cpu.NbPhysCore=0;
-	cpu.FullMask=0;
+	cpu = Arch_CPU();
 
     while (!done)
     {
@@ -78,12 +61,19 @@ static void Get_CPU_Info(Arch_CPU& cpu)
     {
         switch (ptr->Relationship) 
         {
-			case RelationProcessorCore :
-	            // A hyperthreaded core supplies more than one logical processor.
-				cpu.NbHT[processorCoreCount]=CountSetBits(ptr->ProcessorMask);
-		        logicalProcessorCount+=cpu.NbHT[processorCoreCount];
-				cpu.ProcMask[processorCoreCount++]=ptr->ProcessorMask;
-				cpu.FullMask|=ptr->ProcessorMask;
+		case RelationProcessorCore :
+			{
+				std::vector<Logical_CPU> core;
+				for (uint32_t bit = 0; bit < sizeof(uintptr_t) * CHAR_BIT; bit++)
+				{
+					if ((ptr->ProcessorMask & ((uintptr_t)1 << bit)) != 0)
+					{
+						core.push_back({ bit });
+						cpu.allowedCPUs.push_back({ bit });
+					}
+				}
+				if (!core.empty()) cpu.cores.push_back(std::move(core));
+			}
 			    break;
 			default : break;
         }
@@ -92,212 +82,170 @@ static void Get_CPU_Info(Arch_CPU& cpu)
     }
 	free(buffer);
 
-	cpu.NbPhysCore=processorCoreCount;
-	cpu.NbLogicCPU=logicalProcessorCount;
 }
 #else
+typedef struct _Linux_CPU_Record
+{
+    int processor;
+    int physicalId;
+    int coreId;
+} Linux_CPU_Record;
+
+static std::vector<Logical_CPU> GetAllowedCPUs()
+{
+    std::vector<Logical_CPU> cpus;
+    const long configured = sysconf(_SC_NPROCESSORS_CONF);
+    size_t capacity = std::max((size_t)128, configured > 0 ? (size_t)configured : (size_t)0);
+    while (capacity <= (size_t)1 << 20)
+    {
+        const size_t setSize = CPU_ALLOC_SIZE(capacity);
+        cpu_set_t *set = CPU_ALLOC(capacity);
+        if (set == nullptr) break;
+        CPU_ZERO_S(setSize, set);
+        if (sched_getaffinity(0, setSize, set) == 0)
+        {
+            for (size_t id = 0; id < capacity; id++)
+            {
+                if (CPU_ISSET_S(id, setSize, set)) cpus.push_back({ (uint32_t)id });
+            }
+            CPU_FREE(set);
+            break;
+        }
+        const int error = errno;
+        CPU_FREE(set);
+        if (error != EINVAL) break;
+        capacity *= 2;
+    }
+
+    if (cpus.empty())
+    {
+        const long count = sysconf(_SC_NPROCESSORS_ONLN);
+        for (long id = 0; id < count; id++) cpus.push_back({ (uint32_t)id });
+    }
+    return cpus;
+}
+
+static void BuildLinuxCPUTopology(Arch_CPU& cpu, const std::map<int, Linux_CPU_Record>& records)
+{
+    std::map<std::pair<int, int>, size_t> coreMap;
+    for (const auto logical : cpu.allowedCPUs)
+    {
+        const auto record = records.find((int)logical.id);
+        const bool topologyAvailable = record != records.end()
+            && record->second.physicalId >= 0 && record->second.coreId >= 0;
+        const auto key = topologyAvailable
+            ? std::make_pair(record->second.physicalId, record->second.coreId)
+            : std::make_pair(INT_MIN, (int)logical.id);
+        auto core = coreMap.find(key);
+        if (core == coreMap.end())
+        {
+            const size_t index = cpu.cores.size();
+            coreMap.emplace(key, index);
+            cpu.cores.push_back({ logical });
+        }
+        else
+        {
+            cpu.cores[core->second].push_back(logical);
+        }
+    }
+}
+
 static void Get_CPU_Info(Arch_CPU& cpu)
 {
-    cpu.NbLogicCPU = 0;
-    cpu.NbPhysCore = 0;
-    cpu.FullMask = 0;
+    cpu = Arch_CPU();
+    cpu.allowedCPUs = GetAllowedCPUs();
+    if (cpu.allowedCPUs.empty()) return;
 
     FILE* fp = fopen("/proc/cpuinfo", "r");
-    if (fp == NULL) return;
+    std::map<int, Linux_CPU_Record> records;
+    if (fp != NULL)
+    {
+        char line[256];
+        Linux_CPU_Record current = { -1, -1, -1 };
+        auto commit_record = [&]() {
+            if (current.processor >= 0) records[current.processor] = current;
+            current = { -1, -1, -1 };
+        };
 
-    // Linux での処理
-    char line[256];
-    int physicalId = -1;
-    int coreId = -1;
-    int processor = -1;
-    std::vector<int> uniquePhysicalIds;
-    std::vector<std::pair<int, int>> coreInfo; // physical_id, core_id のペア
-
-    while (fgets(line, sizeof(line), fp) != NULL) {
-        if (strncmp(line, "processor", 9) == 0) {
-            sscanf(line, "processor\t: %d", &processor);
-        } else if (strncmp(line, "physical id", 11) == 0) {
-            sscanf(line, "physical id\t: %d", &physicalId);
-        } else if (strncmp(line, "core id", 7) == 0) {
-            sscanf(line, "core id\t: %d", &coreId);
+        while (fgets(line, sizeof(line), fp) != NULL)
+        {
+            if (strncmp(line, "processor", 9) == 0)
+                sscanf(line, "processor%*[^:]: %d", &current.processor);
+            else if (strncmp(line, "physical id", 11) == 0)
+                sscanf(line, "physical id%*[^:]: %d", &current.physicalId);
+            else if (strncmp(line, "core id", 7) == 0)
+                sscanf(line, "core id%*[^:]: %d", &current.coreId);
+            else if (line[0] == '\n' || line[0] == '\r')
+                commit_record();
         }
-
-        // 空行が来たら1つのCPUの情報が終わり
-        if (strlen(line) <= 1) {
-            if (processor >= 0 && physicalId >= 0 && coreId >= 0) {
-                // 論理プロセッサ数をカウント
-                cpu.NbLogicCPU++;
-
-                // ユニークな物理IDを記録
-                bool found = false;
-                for (size_t i = 0; i < uniquePhysicalIds.size(); i++) {
-                    if (uniquePhysicalIds[i] == physicalId) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    uniquePhysicalIds.push_back(physicalId);
-                }
-
-                // 物理ID+コアIDのペアを記録
-                coreInfo.push_back(std::make_pair(physicalId, coreId));
-
-                // マスクを設定
-                uintptr_t processorMask = (uintptr_t)1 << processor;
-                cpu.FullMask |= processorMask;
-
-                // 次のCPUのために変数をリセット
-                processor = -1;
-                physicalId = -1;
-                coreId = -1;
-            }
-        }
-    }
-    fclose(fp);
-
-    // 物理コア数を計算（ユニークな物理ID+コアIDの組み合わせ）
-    std::vector<std::pair<int, int>> uniqueCores;
-    for (size_t i = 0; i < coreInfo.size(); i++) {
-        bool found = false;
-        for (size_t j = 0; j < uniqueCores.size(); j++) {
-            if (uniqueCores[j].first == coreInfo[i].first && 
-                uniqueCores[j].second == coreInfo[i].second) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            uniqueCores.push_back(coreInfo[i]);
-        }
-    }
-    cpu.NbPhysCore = uniqueCores.size() > 0 ? (uint8_t)uniqueCores.size() : 1;
-
-    // 各物理コアごとのHT数とマスクを設定
-    for (uint8_t i = 0; i < cpu.NbPhysCore && i < 64; i++) {
-        if (i < uniqueCores.size()) {
-            int physId = uniqueCores[i].first;
-            int coreId = uniqueCores[i].second;
-            
-            // このコアに対応する論理プロセッサをカウント
-            uint8_t htCount = 0;
-            cpu.ProcMask[i] = 0;
-            
-            for (uint8_t j = 0; j < coreInfo.size(); j++) {
-                if (coreInfo[j].first == physId && coreInfo[j].second == coreId) {
-                    htCount++;
-                    // プロセッサマスクを論理IDに基づいて設定
-                    cpu.ProcMask[i] |= ((uintptr_t)1 << j);
-                }
-            }
-            cpu.NbHT[i] = htCount;
-        } else {
-            cpu.NbHT[i] = 0;
-            cpu.ProcMask[i] = 0;
-        }
+        commit_record();
+        fclose(fp);
     }
 
-    // NbPhysCoreが0の場合はフォールバック
-    if (cpu.NbPhysCore == 0) {
-        cpu.NbPhysCore = 1;
-        cpu.NbLogicCPU = cpu.NbLogicCPU > 0 ? cpu.NbLogicCPU : 1;
-        cpu.NbHT[0] = cpu.NbLogicCPU;
-        cpu.ProcMask[0] = cpu.FullMask;
-    }
+    BuildLinuxCPUTopology(cpu, records);
 }
 #endif
 
-
-static uintptr_t GetCPUMask(uintptr_t bitMask, uint8_t CPU_Nb)
+static void CreateThreadCPUs(const Arch_CPU& cpu, uint32_t *threadCPU, uint8_t threadCount,
+    uint8_t offsetCore, uint8_t offsetHT, bool useMaxPhysCore)
 {
-    uint8_t LSHIFT=sizeof(uintptr_t)*8-1;
-    uint8_t i=0,bitSetCount=0;
-    uintptr_t bitTest=1;    
+	if (threadCount == 0 || cpu.cores.empty()) return;
+	std::fill(threadCPU, threadCPU + threadCount, UINT32_MAX);
 
-	CPU_Nb++;
-	while (i<=LSHIFT)
+	size_t coreIndex = offsetCore % cpu.cores.size();
+	size_t htOffset = offsetHT % cpu.cores[coreIndex].size();
+	size_t currentThread = 0;
+	size_t coresVisited = 0;
+	const bool noSMT = cpu.cores.size() == cpu.allowedCPUs.size();
+
+	while (currentThread < threadCount)
 	{
-		if ((bitMask & bitTest)!=0) bitSetCount++;
-		if (bitSetCount==CPU_Nb) return(bitTest);
-		else
+		const auto& core = cpu.cores[coreIndex];
+		size_t threadsForCore = 1;
+		if (noSMT || threadCount > cpu.cores.size())
 		{
-			i++;
-			bitTest<<=1;
+			threadsForCore = threadCount / cpu.cores.size()
+				+ ((threadCount % cpu.cores.size()) > coresVisited ? 1 : 0);
 		}
+		if (!useMaxPhysCore)
+		{
+			threadsForCore = std::max(threadsForCore, core.size() - htOffset);
+		}
+		threadsForCore = std::min(threadsForCore, (size_t)threadCount - currentThread);
+
+		for (size_t i = 0; i < threadsForCore; i++)
+		{
+			threadCPU[currentThread++] = core[(i + htOffset) % core.size()].id;
+		}
+		coreIndex = (coreIndex + 1) % cpu.cores.size();
+		coresVisited++;
+		htOffset = useMaxPhysCore ? offsetHT % cpu.cores[coreIndex].size() : 0;
 	}
-	return(0);
 }
 
-
-static void CreateThreadsMasks(Arch_CPU cpu, uintptr_t *TabMask,uint8_t NbThread,uint8_t offset_core,uint8_t offset_ht,bool UseMaxPhysCore)
+static bool SetThreadAffinity(std::thread::native_handle_type thread, const std::vector<Logical_CPU>& cpus)
 {
-	if (NbThread==0) return;
-
-	memset(TabMask,0,NbThread*sizeof(uintptr_t));
-
-	if ((cpu.NbLogicCPU==0) || (cpu.NbPhysCore==0)) return;
-
-	uint8_t i_cpu=offset_core%cpu.NbPhysCore;
-	uint8_t i_ht=offset_ht%cpu.NbHT[i_cpu];
-	uint8_t current_thread=0,nb_cpu=0;
-
-	if (cpu.NbPhysCore==cpu.NbLogicCPU)
+	if (cpus.empty()) return false;
+#if defined(_WIN32) || defined(_WIN64)
+	uintptr_t mask = 0;
+	for (const auto cpu : cpus)
 	{
-		while (NbThread>current_thread)
-		{
-			uint8_t Nb_Core_Th=NbThread/cpu.NbPhysCore+( ((NbThread%cpu.NbPhysCore)>nb_cpu) ? 1:0 );
-
-			for(uint8_t i=0; i<Nb_Core_Th; i++)
-				TabMask[current_thread++]=GetCPUMask(cpu.ProcMask[i_cpu],0);
-
-			nb_cpu++;
-			i_cpu=(i_cpu+1)%cpu.NbPhysCore;
-		}
+		if (cpu.id < sizeof(mask) * CHAR_BIT) mask |= (uintptr_t)1 << cpu.id;
 	}
-	else
-	{
-		if (UseMaxPhysCore)
-		{
-			if (NbThread>cpu.NbPhysCore)
-			{
-				while (NbThread>current_thread)
-				{
-					uint8_t Nb_Core_Th=NbThread/cpu.NbPhysCore+( ((NbThread%cpu.NbPhysCore)>nb_cpu) ? 1:0 );
-
-					for(uint8_t i=0; i<Nb_Core_Th; i++)
-						TabMask[current_thread++]=GetCPUMask(cpu.ProcMask[i_cpu],(i+i_ht)%cpu.NbHT[i_cpu]);
-
-					nb_cpu++;
-					i_cpu=(i_cpu+1)%cpu.NbPhysCore;
-				}
-			}
-			else
-			{
-				while (NbThread>current_thread)
-				{
-					TabMask[current_thread++]=GetCPUMask(cpu.ProcMask[i_cpu],i_ht);
-					i_cpu=(i_cpu+1)%cpu.NbPhysCore;
-				}
-			}
-		}
-		else
-		{
-			while (NbThread>current_thread)
-			{
-				uint8_t Nb_Core_Th=NbThread/cpu.NbPhysCore+( ((NbThread%cpu.NbPhysCore)>nb_cpu) ? 1:0 );
-
-				Nb_Core_Th=(Nb_Core_Th<(cpu.NbHT[i_cpu]-i_ht)) ? (cpu.NbHT[i_cpu]-i_ht):Nb_Core_Th;
-				Nb_Core_Th=(Nb_Core_Th<=(NbThread-current_thread)) ? Nb_Core_Th:(NbThread-current_thread);
-
-				for (uint8_t i=0; i<Nb_Core_Th; i++)
-					TabMask[current_thread++]=GetCPUMask(cpu.ProcMask[i_cpu],i+i_ht);
-
-				i_cpu=(i_cpu+1)%cpu.NbPhysCore;
-				nb_cpu++;
-				i_ht=0;
-			}
-		}
-	}
+	return mask != 0 && SetThreadAffinityMask(thread, mask) != 0;
+#else
+	uint32_t maxCPU = 0;
+	for (const auto cpu : cpus) maxCPU = std::max(maxCPU, cpu.id);
+	const size_t capacity = std::max((size_t)CPU_SETSIZE, (size_t)maxCPU + 1);
+	const size_t setSize = CPU_ALLOC_SIZE(capacity);
+	cpu_set_t *set = CPU_ALLOC(capacity);
+	if (set == nullptr) return false;
+	CPU_ZERO_S(setSize, set);
+	for (const auto cpu : cpus) CPU_SET_S(cpu.id, setSize, set);
+	const bool result = pthread_setaffinity_np(thread, setSize, set) == 0;
+	CPU_FREE(set);
+	return result;
+#endif
 }
 
 
@@ -306,6 +254,7 @@ void ThreadPool::ThreadFunction(MT_Data_Thread *data)
 	while (true)
 	{
 		WaitForSingleObject(data->nextJob, INFINITE);
+		if (data->stop.load(std::memory_order_acquire)) return;
 		switch(data->f_process)
 		{
 			case 1:
@@ -322,6 +271,7 @@ void ThreadPool::ThreadFunction(MT_Data_Thread *data)
 		}
 		ResetEvent(data->nextJob);
 		SetEvent(data->jobFinished);
+		if (data->stop.load(std::memory_order_acquire)) return;
 	}
 }
 
@@ -330,7 +280,8 @@ ThreadPool::ThreadPool(void): MT_Thread(),
   nextJob(),
   jobFinished(),
   threads(),
-  ThreadMask(),
+  ThreadCPU(),
+  ThreadAffinitySet(),
   ThreadSleep(),
   Status_Ok(true),
   TotalThreadsRequested(0),
@@ -348,6 +299,9 @@ ThreadPool::ThreadPool(void): MT_Thread(),
 		MT_Thread[i].thread_Id = (uint8_t)i;
 		MT_Thread[i].jobFinished = NULL;
 		MT_Thread[i].nextJob = NULL;
+		MT_Thread[i].stop.store(false, std::memory_order_relaxed);
+		ThreadCPU[i] = UINT32_MAX;
+		ThreadAffinitySet[i] = false;
 		ThreadSleep[i] = true;
 	}
 	TotalThreadsRequested = 0;
@@ -355,7 +309,7 @@ ThreadPool::ThreadPool(void): MT_Thread(),
 	CurrentThreadsUsed = 0;
 
 	Get_CPU_Info(CPU);
-	if ((CPU.NbLogicCPU == 0) || (CPU.NbPhysCore == 0)) Status_Ok = false;
+	if (CPU.allowedCPUs.empty() || CPU.cores.empty()) Status_Ok = false;
 }
 
 
@@ -363,25 +317,29 @@ void ThreadPool::FreeThreadPool(void)
 {
 	if (TotalThreadsRequested > 0)
 	{
-		for (int16_t i = TotalThreadsRequested - 1; i >= 0; i--)
+		for (size_t i = 0; i < threads.size(); i++)
 		{
-			if (i < threads.size() && threads[i].joinable())
-			{
-				MT_Thread[i].f_process = 255;
-				SetEvent(nextJob[i].get());
-				threads[i].join();
-				MT_Thread[i].f_process = 0;
-				MT_Thread[i].MTData = NULL;
-				MT_Thread[i].jobFinished = NULL;
-				MT_Thread[i].nextJob = NULL;
-				ThreadSleep[i] = true;
-			}
+			MT_Thread[i].stop.store(true, std::memory_order_release);
+			SetEvent(nextJob[i].get());
+		}
+
+		for (auto& thread : threads)
+		{
+			if (thread.joinable()) thread.join();
 		}
 
 		threads.clear();
 
 		for (int16_t i = TotalThreadsRequested - 1; i >= 0; i--)
 		{
+			MT_Thread[i].f_process = 0;
+			MT_Thread[i].MTData = NULL;
+			MT_Thread[i].jobFinished = NULL;
+			MT_Thread[i].nextJob = NULL;
+			MT_Thread[i].stop.store(false, std::memory_order_relaxed);
+			ThreadCPU[i] = UINT32_MAX;
+			ThreadAffinitySet[i] = false;
+			ThreadSleep[i] = true;
 			nextJob[i].reset();
 			jobFinished[i].reset();
 		}
@@ -393,37 +351,11 @@ void ThreadPool::FreeThreadPool(void)
 }
 
 
-/*
-This function is called by the destructor only, meaning there
-is a high probability being in an "unload DLL" stage when this
-function is called.
-In normal usage, threads should have been exited "properly"
-before by a FreeThreadPool call, and this function should
-do nothing. But, if unfortunately it's not the case, this
-function will clean-up the remaining threads in the "hard" way,
-the "proper" way not being possible anymore if we are in
-an "unload DLL" stage.
-*/
+// デストラクタから呼ばれた場合も、ワーカーを停止してから待機資源を解放する。
 
 void ThreadPool::DestroyThreadPool(void) 
 {
-	if (TotalThreadsRequested > 0)
-	{
-		for (auto& thread : threads)
-		{
-			if (thread.joinable())
-			{
-				thread.detach();
-			}
-		}
-		threads.clear();
-
-		for (int16_t i = TotalThreadsRequested - 1; i >= 0; i--)
-		{
-			nextJob[i].reset();
-			jobFinished[i].reset();
-		}
-	}
+	FreeThreadPool();
 }
 
 
@@ -435,16 +367,16 @@ ThreadPool::~ThreadPool()
 
 uint8_t ThreadPool::GetThreadNumber(uint8_t thread_number,bool logical)
 {
-	const uint8_t nCPU=(logical) ? CPU.NbLogicCPU:CPU.NbPhysCore;
+	const size_t nCPU = logical ? CPU.allowedCPUs.size() : CPU.cores.size();
 
-	if (thread_number==0) return((nCPU>MAX_MT_THREADS) ? MAX_MT_THREADS:nCPU);
-	else return(thread_number);
+	if (thread_number==0) return((uint8_t)std::min(nCPU, (size_t)MAX_MT_THREADS));
+	else return((uint8_t)std::min((size_t)thread_number, (size_t)MAX_MT_THREADS));
 }
 
 
 bool ThreadPool::AllocateThreads(uint8_t thread_number,uint8_t offset_core,uint8_t offset_ht,bool UseMaxPhysCore,bool SetAffinity,bool sleep)
 {
-	if ((!Status_Ok) || (thread_number==0)) return(false);
+	if ((!Status_Ok) || (thread_number==0) || (thread_number>MAX_MT_THREADS)) return(false);
 
 	if (thread_number>CurrentThreadsAllocated)
 	{
@@ -476,24 +408,30 @@ bool ThreadPool::DeAllocateThreads(void)
 
 void ThreadPool::CreateThreadPool(uint8_t offset_core, uint8_t offset_ht, bool UseMaxPhysCore, bool SetAffinity, bool sleep)
 {
+	(void)sleep;
 	// 既存のスレッドを停止
 	for (size_t i = 0; i < threads.size(); i++)
 	{
 		ThreadSleep[i] = true;
 	}
 
-	CreateThreadsMasks(CPU, ThreadMask, TotalThreadsRequested, offset_core, offset_ht, UseMaxPhysCore);
+	if (SetAffinity)
+	{
+		CreateThreadCPUs(CPU, ThreadCPU, TotalThreadsRequested, offset_core, offset_ht, UseMaxPhysCore);
+	}
 
 	// 既存のスレッドのアフィニティを設定
 	for (size_t i = 0; i < threads.size(); i++)
 	{
 		if (SetAffinity)
 		{
-			SetThreadAffinityMask(threads[i].native_handle(), ThreadMask[i]);
+			ThreadAffinitySet[i] = ThreadCPU[i] != UINT32_MAX
+				&& SetThreadAffinity(threads[i].native_handle(), { { ThreadCPU[i] } });
 		}
-		else
+		else if (ThreadAffinitySet[i])
 		{
-			SetThreadAffinityMask(threads[i].native_handle(), CPU.FullMask);
+			SetThreadAffinity(threads[i].native_handle(), CPU.allowedCPUs);
+			ThreadAffinitySet[i] = false;
 		}
 	}
 
@@ -507,6 +445,7 @@ void ThreadPool::CreateThreadPool(uint8_t offset_core, uint8_t offset_ht, bool U
 		nextJob[i] = CreateEventUnique(NULL, TRUE, FALSE);
 		MT_Thread[i].jobFinished = jobFinished[i].get();
 		MT_Thread[i].nextJob = nextJob[i].get();
+		MT_Thread[i].stop.store(false, std::memory_order_relaxed);
 		Status_Ok = Status_Ok && (jobFinished[i] && nextJob[i]);
 		i++;
 	}
@@ -527,11 +466,8 @@ void ThreadPool::CreateThreadPool(uint8_t offset_core, uint8_t offset_ht, bool U
 		{
 			if (SetAffinity)
 			{
-				SetThreadAffinityMask(threads.back().native_handle(), ThreadMask[i]);
-			}
-			else
-			{
-				SetThreadAffinityMask(threads.back().native_handle(), CPU.FullMask);
+				ThreadAffinitySet[i] = ThreadCPU[i] != UINT32_MAX
+					&& SetThreadAffinity(threads.back().native_handle(), { { ThreadCPU[i] } });
 			}
 		}
 		i++;
@@ -612,4 +548,3 @@ bool ThreadPool::WaitThreadsEnd(void)
 
 	return(true);
 }
-

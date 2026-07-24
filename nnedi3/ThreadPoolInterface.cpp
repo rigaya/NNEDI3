@@ -1127,27 +1127,21 @@ bool ThreadPoolInterface::RequestThreadPool(uint16_t UserId,uint8_t thread_numbe
 	{
 		if ((NbrePool>1) && (!Exclusive))
 		{
-			HANDLE TabTemp[MAX_THREAD_POOL];
-			uint8_t TabNbre[MAX_THREAD_POOL];
-
-			uint8_t Nbre=0;
-			for(uint8_t i=0; i<NbrePool; i++)
-			{
-				if (thread_number<=ptrPool[i]->GetCurrentThreadAllocated())
+			auto findFreePool = [&]() -> int8_t {
+				for (uint8_t i = 0; i < NbrePool; i++)
 				{
-					TabTemp[Nbre]=ThreadPoolFree[i].get();
-					TabNbre[Nbre++]=i;
-					if (!ThreadPoolRequested[i]) nPool=i;
+					if (thread_number <= ptrPool[i]->GetCurrentThreadAllocated() && !ThreadPoolRequested[i])
+						return (int8_t)i;
 				}
-			}
+				return -1;
+			};
 
-			bool PoolFree=(nPool==-1)?false:true;
-		
-			while (!PoolFree)
-			{	
-				CriticalSection.unlock();
-				DWORD a=WaitForMultipleObjects(Nbre,TabTemp,FALSE,INFINITE);
-				CriticalSection.lock();
+			nPool = findFreePool();
+			while (nPool == -1)
+			{
+				std::unique_lock<std::mutex> stateLock(CriticalSection, std::adopt_lock);
+				PoolStateChanged.wait(stateLock, [&]() { return findFreePool() != -1; });
+				stateLock.release();
 				userindex=GetUserIdIndex(UserId);
 				if ((!Status_Ok) || Error_Occured || (userindex==-1))
 				{
@@ -1156,8 +1150,7 @@ bool ThreadPoolInterface::RequestThreadPool(uint16_t UserId,uint8_t thread_numbe
 					nPool=-1;
 					return(false);
 				}
-				nPool=(int8_t)TabNbre[(a-WAIT_OBJECT_0)];
-				PoolFree=!ThreadPoolRequested[nPool];
+				nPool = findFreePool();
 			}
 		}
 		else
@@ -1328,6 +1321,7 @@ bool ThreadPoolInterface::ReleaseThreadPoolCore(uint16_t UserId,int16_t index,bo
 		ThreadPoolRequested[nPool]=false;
 		out=ptrPool[nPool]->ReleaseThreadPool(sleep);
 		SetEvent(ThreadPoolFree[nPool].get());
+		PoolStateChanged.notify_all();
 	}
 
 	if (ExclusiveMode)
