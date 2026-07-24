@@ -23,6 +23,7 @@
 #include "nnedi3.h"
 #include "nnedi3_backend.h"
 #include "nnedi3_intrinsic.h"
+#include "nnedi3_intrinsic_AVX512.h"
 #include <stdint.h>
 #include <cstring>
 #include <string>
@@ -119,6 +120,8 @@ static ThreadPoolInterface *poolInterface;
 using nnedi3_backend::BackendSelection;
 using nnedi3_backend::KernelSet;
 using nnedi3_backend::Platform;
+using nnedi3_backend::PredictorDot;
+using nnedi3_backend::PredictorPlan;
 using nnedi3_backend::SelectionError;
 using nnedi3_backend::WeightLayout;
 
@@ -177,14 +180,22 @@ static std::string missingFeatureNames(const int missing)
 static int selectRequestedOpt(const int requestedOpt, const int cpuFlags,
 	IScriptEnvironment *env, const char *filterName)
 {
+#if defined(_WIN32) && !defined(_WIN64)
+	if (requestedOpt == 8)
+		env->ThrowError("%s: opt=8 is not supported by the Win32 build; use x64!", filterName);
+#endif
 	const BackendSelection selection = nnedi3_backend::select_backend(currentPlatform(), requestedOpt, cpuFlags);
 	if (selection.error == SelectionError::InvalidOpt)
 		env->ThrowError("%s: opt must be in [0,8]!", filterName);
 	if (selection.error == SelectionError::MissingFeatures)
 	{
 		const std::string missing = missingFeatureNames(selection.missing_features);
-		env->ThrowError("%s: opt=8 requires AVX2, FMA3, AVX512F, AVX512BW, AVX512DQ and AVX512VL; missing: %s",
-			filterName, missing.c_str());
+		if (requestedOpt == 8)
+			env->ThrowError("%s: opt=8 requires AVX2, FMA3, AVX512F, AVX512BW, AVX512DQ and AVX512VL; missing: %s",
+				filterName, missing.c_str());
+		else
+			env->ThrowError("%s: opt=%d requires AVX2 and FMA3; missing: %s",
+				filterName, requestedOpt, missing.c_str());
 	}
 	return selection.normalized_opt;
 }
@@ -313,6 +324,8 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 	int16_predictor = ((fapprox & 2)!=0) && (bits_per_pixel<=15);
 	int16_prescreener = ((fapprox & 1)!=0) && (pixelsize<=2);
+	const PredictorPlan predictorPlan = nnedi3_backend::make_predictor_plan(
+		kernelSet, int16_predictor, bits_per_pixel);
 	
 	const int PlaneMax=(grey) ? 1:(isAlphaChannel) ? 4:3;
 
@@ -898,7 +911,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
       // CUDA用に並べ替え前のデータを取っておく
       memcpy(weight1cuda.get() + i * weight1PlaneBytes, weights1[i], weight1PlaneBytes);
 
-			if (nnedi3_backend::uses_simd_layout(kernelSet.predictor_weights) && (bits_per_pixel<=14)) // shuffle weight order for asm
+			if (nnedi3_backend::uses_simd_layout(predictorPlan.layout)) // shuffle weight order for asm
 			{
 				int16_t *rs = (int16_t *)malloc(nnst2*asize*sizeof(int16_t));
 				if (rs==NULL)
@@ -911,29 +924,15 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 				memcpy(rs,ws,nnst2*asize*sizeof(int16_t));
 				j_a=0;
-				if (nnedi3_backend::uses_avx2_layout(kernelSet.predictor_weights))
+				for (int j=0; j<nnst2; j++)
 				{
-					for (int j=0; j<nnst2; j++)
+					for (int k=0; k<asize; k++)
 					{
-						int j_b=((j >> 2) << 2)*asize;
-						int j_c=(j&3) << 4;
-
-						for (int k=0; k<asize; k++)
-							ws[j_b+((k >> 4) << 6)+j_c+(k&15)] = rs[j_a+k];
-						j_a+=asize;
+						const size_t index = nnedi3_backend::predictor_matrix_index(
+							predictorPlan.layout, true, j, k, asize);
+						ws[index] = rs[j_a+k];
 					}
-				}
-				else
-				{
-					for (int j=0; j<nnst2; j++)
-					{
-						int j_b=((j >> 2) << 2)*asize;
-						int j_c=(j&3) << 3;
-
-						for (int k=0; k<asize; k++)
-							ws[j_b+((k >> 3) << 5)+j_c+(k&7)] = rs[j_a+k];
-						j_a+=asize;
-					}
+					j_a+=asize;
 				}
 				free(rs);
 			}
@@ -945,41 +944,20 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			j_a=0;
 			j_d=asize+1;
 
-			if (nnedi3_backend::uses_simd_layout(kernelSet.predictor_weights)) // shuffle weight order for asm
+			if (nnedi3_backend::uses_simd_layout(predictorPlan.layout)) // shuffle weight order for asm
 			{
-				if (nnedi3_backend::uses_avx2_layout(kernelSet.predictor_weights))
+				for (int j=0; j<nnst2; j++)
 				{
-					for (int j=0; j<nnst2; j++)
+					for (int k=0; k<asize; k++)
 					{
-						for (int k=0; k<asize; k++)
-						{
-							const double q = j < nnst ? mean[k] : 0.0;
-							int j_b=((j >> 2) << 2)*asize;
-							int j_c=(j&3) << 3;
-
-							weights1[i][j_b+((k >> 3) << 5)+j_c+(k&7)]=(float)(bdataT[j_a+k]-mean[j_d]-q);
-						}
-						weights1[i][boff+j] = (float)(bdataT[boff+j]-(j<nnst?mean[asize]:0.0));
-						j_a+=asize;
-						j_d++;
+						const double q = j < nnst ? mean[k] : 0.0;
+						const size_t index = nnedi3_backend::predictor_matrix_index(
+							predictorPlan.layout, false, j, k, asize);
+						weights1[i][index]=(float)(bdataT[j_a+k]-mean[j_d]-q);
 					}
-				}
-				else
-				{
-					for (int j=0; j<nnst2; j++)
-					{
-						for (int k=0; k<asize; k++)
-						{
-							const double q = j < nnst ? mean[k] : 0.0;
-							int j_b=((j >> 2) << 2)*asize;
-							int j_c=(j&3) << 2;
-
-							weights1[i][j_b+((k >> 2) << 4)+j_c+(k&3)]=(float)(bdataT[j_a+k]-mean[j_d]-q);
-						}
-						weights1[i][boff+j] = (float)(bdataT[boff+j]-(j<nnst?mean[asize]:0.0));
-						j_a+=asize;
-						j_d++;
-					}
+					weights1[i][boff+j] = (float)(bdataT[boff+j]-(j<nnst?mean[asize]:0.0));
+					j_a+=asize;
+					j_d++;
 				}
 			}
 			else
@@ -2820,7 +2798,7 @@ struct PredictorKernels
 };
 
 static PredictorKernels makePredictorKernels8(const KernelSet& backend,
-	const bool int16Predictor, const int asize, const int fapprox)
+	const PredictorPlan& plan, const bool int16Predictor, const int asize, const int fapprox)
 {
 	auto intExtract = extract_m8_i16_C;
 	auto intDot = dotProdS_C;
@@ -2872,6 +2850,14 @@ static PredictorKernels makePredictorKernels8(const KernelSet& backend,
 		weightedAverage = weightedAvgElliottMul5_m16_FMA3;
 	}
 #endif
+#if !defined(_WIN32) || defined(_WIN64)
+	if (plan.dot == PredictorDot::AVX512Float)
+		floatDot = (asize%48)!=0 ? dotProd_m32_m16_AVX512 : dotProd_m48_m16_AVX512;
+	else if (plan.dot == PredictorDot::AVX512Int16)
+		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512 : dotProd_m48_m16_i16_AVX512;
+#endif
+	if (plan.dot == PredictorDot::CInt16)
+		intDot = dotProdS_C;
 	return { int16Predictor ? intExtract : floatExtract,
 		int16Predictor ? intDot : floatDot,
 		(fapprox&12)==0 ? e2 : (fapprox&12)==4 ? e1 : e0, weightedAverage };
@@ -2894,13 +2880,16 @@ void evalFunc_2(void *ps)
 	const int ydia = pss->ydia;
 	const int fapprox = pss->fapprox;
 	const bool int16_predictor = pss->int16_predictor;
+	const PredictorPlan predictorPlan = nnedi3_backend::make_predictor_plan(
+		backend, int16_predictor, 8);
 	const float scale = (float)(1.0/(double)qual);
 	void (*extract)(const uint8_t*,const int,const int,const int,float*,float*);
 	void (*dotProd)(const float*,const float*,float*,const int,const int,const float*);
 	void (*expf)(float *,const int);
 	void (*wae5)(const float*,const int,float*);
 
-	const PredictorKernels selected = makePredictorKernels8(backend, int16_predictor, asize, fapprox);
+	const PredictorKernels selected = makePredictorKernels8(
+		backend, predictorPlan, int16_predictor, asize, fapprox);
 	extract = selected.extract;
 	dotProd = selected.dotProd;
 	expf = selected.exp;
@@ -3167,7 +3156,8 @@ void extract_m8_C_16(const uint8_t *srcp,const int stride,const int xdia,const i
 
 
 static PredictorKernels makePredictorKernels16(const KernelSet& backend,
-	const bool int16Predictor, const uint8_t bits, const int asize, const int fapprox)
+	const PredictorPlan& plan, const bool int16Predictor, const uint8_t bits,
+	const int asize, const int fapprox)
 {
 	auto intExtract = extract_m8_i16_C_16;
 	auto intDot = dotProdS_C_16;
@@ -3220,6 +3210,14 @@ static PredictorKernels makePredictorKernels16(const KernelSet& backend,
 		weightedAverage = weightedAvgElliottMul5_m16_FMA3;
 	}
 #endif
+#if !defined(_WIN32) || defined(_WIN64)
+	if (plan.dot == PredictorDot::AVX512Float)
+		floatDot = (asize%48)!=0 ? dotProd_m32_m16_AVX512 : dotProd_m48_m16_AVX512;
+	else if (plan.dot == PredictorDot::AVX512Int16)
+		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512 : dotProd_m48_m16_i16_AVX512;
+#endif
+	if (plan.dot == PredictorDot::CInt16)
+		intDot = dotProdS_C_16;
 	return { int16Predictor ? intExtract : floatExtract,
 		int16Predictor ? intDot : floatDot,
 		(fapprox&12)==0 ? e2 : (fapprox&12)==4 ? e1 : e0, weightedAverage };
@@ -3244,12 +3242,15 @@ void evalFunc_2_16(void *ps)
 	const bool int16_predictor = pss->int16_predictor;
 	const float scale = (float)(1.0/(double)qual);
 	const uint8_t bits_per_pixel = pss->bits_per_pixel;
+	const PredictorPlan predictorPlan = nnedi3_backend::make_predictor_plan(
+		backend, int16_predictor, bits_per_pixel);
 	void(*extract)(const uint8_t*, const int, const int, const int, float*, float*);
 	void(*dotProd)(const float*, const float*, float*, const int, const int, const float*);
 	void(*expf)(float *, const int);
 	void(*wae5)(const float*, const int, float*);
 
-	const PredictorKernels selected = makePredictorKernels16(backend, int16_predictor, bits_per_pixel, asize, fapprox);
+	const PredictorKernels selected = makePredictorKernels16(
+		backend, predictorPlan, int16_predictor, bits_per_pixel, asize, fapprox);
 	extract = selected.extract;
 	dotProd = selected.dotProd;
 	expf = selected.exp;
@@ -3423,7 +3424,7 @@ void extract_m8_C_32(const uint8_t *srcp, const int stride, const int xdia, cons
 
 
 static PredictorKernels makePredictorKernels32(const KernelSet& backend,
-	const int asize, const int fapprox)
+	const PredictorPlan& plan, const int asize, const int fapprox)
 {
 	auto extract = extract_m8_C_32;
 	auto dotProd = dotProd_C;
@@ -3467,6 +3468,10 @@ static PredictorKernels makePredictorKernels32(const KernelSet& backend,
 		weightedAverage = weightedAvgElliottMul5_m16_FMA3;
 	}
 #endif
+#if !defined(_WIN32) || defined(_WIN64)
+	if (plan.dot == PredictorDot::AVX512Float)
+		dotProd = (asize%48)!=0 ? dotProd_m32_m16_AVX512 : dotProd_m48_m16_AVX512;
+#endif
 	return { extract, dotProd, (fapprox&12)==0 ? e2 : (fapprox&12)==4 ? e1 : e0,
 		weightedAverage };
 }
@@ -3486,13 +3491,16 @@ void evalFunc_2_32(void *ps)
 	const int xdiad2m1 = (xdia >> 1) - 1;
 	const int ydia = pss->ydia;
 	const int fapprox = pss->fapprox;
+	const KernelSet backend = getKernelSet(opt);
+	const PredictorPlan predictorPlan = nnedi3_backend::make_predictor_plan(
+		backend, false, 32);
 	const float scale = (float)(1.0/(double)qual);
 	void(*extract)(const uint8_t*, const int, const int, const int, float*, float*);
 	void(*dotProd)(const float*, const float*, float*, const int, const int, const float*);
 	void(*expf)(float *, const int);
 	void(*wae5)(const float*, const int, float*);
 
-	const PredictorKernels selected = makePredictorKernels32(getKernelSet(opt), asize, fapprox);
+	const PredictorKernels selected = makePredictorKernels32(backend, predictorPlan, asize, fapprox);
 	extract = selected.extract;
 	dotProd = selected.dotProd;
 	expf = selected.exp;

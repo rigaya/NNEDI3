@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace nnedi3_backend {
@@ -47,6 +48,13 @@ enum class SelectionError {
     MissingFeatures,
 };
 
+enum class PredictorDot {
+    Existing,
+    CInt16,
+    AVX512Float,
+    AVX512Int16,
+};
+
 struct BackendSelection {
     Backend backend;
     int normalized_opt;
@@ -64,6 +72,11 @@ struct KernelSet {
     bool has_avx;
     bool has_avx2;
     bool has_fma3;
+};
+
+struct PredictorPlan {
+    PredictorDot dot;
+    WeightLayout layout;
 };
 
 constexpr bool has_all_features(const int cpu_flags, const int required) {
@@ -91,18 +104,18 @@ constexpr BackendSelection select_windows_backend(const int requested_opt, const
         return {Backend::AVX512, 8, missing,
             missing == 0 ? SelectionError::None : SelectionError::MissingFeatures};
     }
+    if (requested_opt >= 5) {
+        const int required = CPU_AVX2 | CPU_FMA3;
+        const int missing = required & ~cpu_flags;
+        return {Backend::AVX2FMA3, 6, missing,
+            missing == 0 ? SelectionError::None : SelectionError::MissingFeatures};
+    }
     if (requested_opt != 0) {
         return {backend_from_legacy_opt(requested_opt), requested_opt, 0, SelectionError::None};
     }
 
-    if (has_all_features(cpu_flags, CPU_AVX2 | CPU_FMA4)) {
-        return {Backend::AVX2FMA4, 7, 0, SelectionError::None};
-    }
     if (has_all_features(cpu_flags, CPU_AVX2 | CPU_FMA3)) {
         return {Backend::AVX2FMA3, 6, 0, SelectionError::None};
-    }
-    if ((cpu_flags & CPU_AVX2) != 0) {
-        return {Backend::AVX2, 5, 0, SelectionError::None};
     }
     if ((cpu_flags & CPU_AVX) != 0) {
         return {Backend::AVX, 4, 0, SelectionError::None};
@@ -163,12 +176,59 @@ constexpr KernelSet kernel_set_from_opt(const int normalized_opt) {
     return make_kernel_set(backend_from_legacy_opt(normalized_opt));
 }
 
+constexpr PredictorPlan make_predictor_plan(const KernelSet& kernels,
+    const bool int16_predictor, const int bits_per_pixel) {
+    if (int16_predictor && bits_per_pixel > 14) {
+        return {PredictorDot::CInt16, WeightLayout::NeuronMajor};
+    }
+    if (kernels.requested_backend == Backend::AVX512) {
+        return {int16_predictor ? PredictorDot::AVX512Int16
+                               : PredictorDot::AVX512Float,
+            WeightLayout::AVX512};
+    }
+    return {PredictorDot::Existing, kernels.predictor_weights};
+}
+
+constexpr std::size_t predictor_matrix_index(const WeightLayout layout,
+    const bool int16_predictor, const int neuron, const int sample, const int asize) {
+    const std::size_t group_base = static_cast<std::size_t>((neuron >> 2) << 2) * asize;
+    const int neuron_in_group = neuron & 3;
+    if (layout == WeightLayout::NeuronMajor) {
+        return static_cast<std::size_t>(neuron) * asize + sample;
+    }
+    if (layout == WeightLayout::LegacySIMD) {
+        const int chunk = int16_predictor ? 8 : 4;
+        return group_base + static_cast<std::size_t>(sample / chunk) * (chunk * 4)
+            + neuron_in_group * chunk + sample % chunk;
+    }
+    if (layout == WeightLayout::AVX2) {
+        const int chunk = int16_predictor ? 16 : 8;
+        return group_base + static_cast<std::size_t>(sample / chunk) * (chunk * 4)
+            + neuron_in_group * chunk + sample % chunk;
+    }
+    if (!int16_predictor) {
+        return group_base + static_cast<std::size_t>(sample >> 4) * 64
+            + (neuron_in_group << 4) + (sample & 15);
+    }
+    if (asize == 48) {
+        return sample < 32
+            ? group_base + (neuron_in_group << 5) + sample
+            : group_base + 128 + (neuron_in_group << 4) + (sample - 32);
+    }
+    return group_base + static_cast<std::size_t>(sample >> 5) * 128
+        + (neuron_in_group << 5) + (sample & 31);
+}
+
 constexpr bool uses_simd_layout(const WeightLayout layout) {
     return layout != WeightLayout::NeuronMajor;
 }
 
 constexpr bool uses_avx2_layout(const WeightLayout layout) {
     return layout == WeightLayout::AVX2;
+}
+
+constexpr bool uses_avx512_layout(const WeightLayout layout) {
+    return layout == WeightLayout::AVX512;
 }
 
 }

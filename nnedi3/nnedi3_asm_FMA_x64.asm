@@ -3849,10 +3849,10 @@ lloop_2:
 		xor rcx,rcx
 		vinsertf128 ymm7,ymm7,xmm7,1
 aloop_2:
-		vmulps ymm0,ymm7,YMMWORD ptr[rax+rcx*4]
-		vmulps ymm2,ymm7,YMMWORD ptr[rax+rcx*4+32]
-		vaddps ymm0,ymm0,YMMWORD ptr[rdi+rcx*4]
-		vaddps ymm2,ymm2,YMMWORD ptr[rdi+rcx*4+32]
+		vmovaps ymm0,YMMWORD ptr[rax+rcx*4]
+		vmovaps ymm2,YMMWORD ptr[rax+rcx*4+32]
+		vfmadd213ps ymm0,ymm7,YMMWORD ptr[rdi+rcx*4]
+		vfmadd213ps ymm2,ymm7,YMMWORD ptr[rdi+rcx*4+32]
 		vmovaps YMMWORD ptr[rax+rcx*4],ymm0
 		vmovaps YMMWORD ptr[rax+rcx*4+32],ymm2
 		add rcx,r11
@@ -4326,10 +4326,10 @@ lloop2_2:
 		xor rcx,rcx
 		vinsertf128 ymm7,ymm7,xmm7,1
 aloop2_2:
-		vmulps ymm0,ymm7,YMMWORD ptr[rax+rcx*4]
-		vmulps ymm2,ymm7,YMMWORD ptr[rax+rcx*4+32]
-		vaddps ymm0,ymm0,YMMWORD ptr[rdi+rcx*4]
-		vaddps ymm2,ymm2,YMMWORD ptr[rdi+rcx*4+32]
+		vmovaps ymm0,YMMWORD ptr[rax+rcx*4]
+		vmovaps ymm2,YMMWORD ptr[rax+rcx*4+32]
+		vfmadd213ps ymm0,ymm7,YMMWORD ptr[rdi+rcx*4]
+		vfmadd213ps ymm2,ymm7,YMMWORD ptr[rdi+rcx*4+32]
 		vmovaps YMMWORD ptr[rax+rcx*4],ymm0
 		vmovaps YMMWORD ptr[rax+rcx*4+32],ymm2
 		add rcx,r11
@@ -4631,14 +4631,10 @@ aloop_3:
 		vmulps xmm1,xmm1,XMMWORD ptr[rdi+rcx*8+32]
 		vmulps xmm2,xmm2,XMMWORD ptr[rdi+rcx*8+64]
 		vmulps xmm3,xmm3,XMMWORD ptr[rdi+rcx*8+96]
-		vmulps xmm0,xmm0,xmm7
-		vmulps xmm1,xmm1,xmm7
-		vmulps xmm2,xmm2,xmm7
-		vmulps xmm3,xmm3,xmm7
-		vaddps xmm0,xmm0,XMMWORD ptr[rdi+rcx*8+16]
-		vaddps xmm1,xmm1,XMMWORD ptr[rdi+rcx*8+48]
-		vaddps xmm2,xmm2,XMMWORD ptr[rdi+rcx*8+80]
-		vaddps xmm3,xmm3,XMMWORD ptr[rdi+rcx*8+112]
+		vfmadd213ps xmm0,xmm7,XMMWORD ptr[rdi+rcx*8+16]
+		vfmadd213ps xmm1,xmm7,XMMWORD ptr[rdi+rcx*8+48]
+		vfmadd213ps xmm2,xmm7,XMMWORD ptr[rdi+rcx*8+80]
+		vfmadd213ps xmm3,xmm7,XMMWORD ptr[rdi+rcx*8+112]
 		vmovaps XMMWORD ptr[rax+rcx*4],xmm0
 		vmovaps XMMWORD ptr[rax+rcx*4+16],xmm1
 		vmovaps XMMWORD ptr[rax+rcx*4+32],xmm2
@@ -4800,14 +4796,10 @@ aloop_4:
 		vmulps xmm1,xmm1,XMMWORD ptr[rdi+rcx*8+32]
 		vmulps xmm2,xmm2,XMMWORD ptr[rdi+rcx*8+64]
 		vmulps xmm3,xmm3,XMMWORD ptr[rdi+rcx*8+96]
-		vmulps xmm0,xmm0,xmm7
-		vmulps xmm1,xmm1,xmm7
-		vmulps xmm2,xmm2,xmm7
-		vmulps xmm3,xmm3,xmm7
-		vaddps xmm0,xmm0,XMMWORD ptr[rdi+rcx*8+16]
-		vaddps xmm1,xmm1,XMMWORD ptr[rdi+rcx*8+48]
-		vaddps xmm2,xmm2,XMMWORD ptr[rdi+rcx*8+80]
-		vaddps xmm3,xmm3,XMMWORD ptr[rdi+rcx*8+112]
+		vfmadd213ps xmm0,xmm7,XMMWORD ptr[rdi+rcx*8+16]
+		vfmadd213ps xmm1,xmm7,XMMWORD ptr[rdi+rcx*8+48]
+		vfmadd213ps xmm2,xmm7,XMMWORD ptr[rdi+rcx*8+80]
+		vfmadd213ps xmm3,xmm7,XMMWORD ptr[rdi+rcx*8+112]
 		vmovaps XMMWORD ptr[rax+rcx*4],xmm0
 		vmovaps XMMWORD ptr[rax+rcx*4+16],xmm1
 		vmovaps XMMWORD ptr[rax+rcx*4+32],xmm2

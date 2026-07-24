@@ -1323,14 +1323,12 @@ extern "C" void dotProd_m32_m16_FMA3(
     int rcx2 = 0;
     // aloop_2
     while (rdx != 0) {
-        // vmulps ymm0,ymm7,YMMWORD ptr[rax+rcx*4]
-        __m256 ymm0 = _mm256_mul_ps(ymm7_full, _mm256_load_ps((float*)(rax + rcx2*4)));
-        // vmulps ymm2,ymm7,YMMWORD ptr[rax+rcx*4+32]
-        __m256 ymm2 = _mm256_mul_ps(ymm7_full, _mm256_load_ps((float*)(rax + rcx2*4 + 32)));
-        // vaddps ymm0,ymm0,YMMWORD ptr[rdi+rcx*4]
-        ymm0 = _mm256_add_ps(ymm0, _mm256_load_ps((float*)(rdi + rcx2*4)));
-        // vaddps ymm2,ymm2,YMMWORD ptr[rdi+rcx*4+32]
-        ymm2 = _mm256_add_ps(ymm2, _mm256_load_ps((float*)(rdi + rcx2*4 + 32)));
+        // FMA化: vfmadd213ps ymm0,ymm7,YMMWORD ptr[rdi+rcx*4]
+        __m256 ymm0 = _mm256_fmadd_ps(_mm256_load_ps((float*)(rax + rcx2*4)), ymm7_full,
+            _mm256_load_ps((float*)(rdi + rcx2*4)));
+        // FMA化: vfmadd213ps ymm2,ymm7,YMMWORD ptr[rdi+rcx*4+32]
+        __m256 ymm2 = _mm256_fmadd_ps(_mm256_load_ps((float*)(rax + rcx2*4 + 32)), ymm7_full,
+            _mm256_load_ps((float*)(rdi + rcx2*4 + 32)));
         // vmovaps YMMWORD ptr[rax+rcx*4],ymm0
         _mm256_store_ps((float*)(rax + rcx2*4), ymm0);
         // vmovaps YMMWORD ptr[rax+rcx*4+32],ymm2
@@ -1500,14 +1498,12 @@ extern "C" void dotProd_m48_m16_FMA3(
 
     // aloop2_2
     while (rdx != 0) {
-        // vmulps ymm0,ymm7,YMMWORD ptr[rax+rcx*4]
-        __m256 ymm0 = _mm256_mul_ps(ymm7_full, _mm256_load_ps((float*)(rax + rcx2*4)));
-        // vmulps ymm2,ymm7,YMMWORD ptr[rax+rcx*4+32]
-        __m256 ymm2 = _mm256_mul_ps(ymm7_full, _mm256_load_ps((float*)(rax + rcx2*4 + 32)));
-        // vaddps ymm0,ymm0,YMMWORD ptr[rdi+rcx*4]
-        ymm0 = _mm256_add_ps(ymm0, _mm256_load_ps((float*)(rdi + rcx2*4)));
-        // vaddps ymm2,ymm2,YMMWORD ptr[rdi+rcx*4+32]
-        ymm2 = _mm256_add_ps(ymm2, _mm256_load_ps((float*)(rdi + rcx2*4 + 32)));
+        // FMA化: vfmadd213ps ymm0,ymm7,YMMWORD ptr[rdi+rcx*4]
+        __m256 ymm0 = _mm256_fmadd_ps(_mm256_load_ps((float*)(rax + rcx2*4)), ymm7_full,
+            _mm256_load_ps((float*)(rdi + rcx2*4)));
+        // FMA化: vfmadd213ps ymm2,ymm7,YMMWORD ptr[rdi+rcx*4+32]
+        __m256 ymm2 = _mm256_fmadd_ps(_mm256_load_ps((float*)(rax + rcx2*4 + 32)), ymm7_full,
+            _mm256_load_ps((float*)(rdi + rcx2*4 + 32)));
         // vmovaps YMMWORD ptr[rax+rcx*4],ymm0
         _mm256_store_ps((float*)(rax + rcx2*4), ymm0);
         // vmovaps YMMWORD ptr[rax+rcx*4+32],ymm2
@@ -1684,23 +1680,14 @@ extern "C" void dotProd_m32_m16_i16_AVX2(
         // vmulps xmm3,xmm3,XMMWORD ptr[rdi+rcx*8+96]
         xmm3 = _mm_mul_ps(xmm3, _mm_load_ps((float*)(rdi + rcx2*8 + 96)));
 
-        // vmulps xmm0,xmm0,xmm7
-        xmm0 = _mm_mul_ps(xmm0, xmm7);
-        // vmulps xmm1,xmm1,xmm7
-        xmm1 = _mm_mul_ps(xmm1, xmm7);
-        // vmulps xmm2,xmm2,xmm7
-        xmm2 = _mm_mul_ps(xmm2, xmm7);
-        // vmulps xmm3,xmm3,xmm7
-        xmm3 = _mm_mul_ps(xmm3, xmm7);
-
-        // vaddps xmm0,xmm0,XMMWORD ptr[rdi+rcx*8+16]
-        xmm0 = _mm_add_ps(xmm0, _mm_load_ps((float*)(rdi + rcx2*8 + 16)));
-        // vaddps xmm1,xmm1,XMMWORD ptr[rdi+rcx*8+48]
-        xmm1 = _mm_add_ps(xmm1, _mm_load_ps((float*)(rdi + rcx2*8 + 48)));
-        // vaddps xmm2,xmm2,XMMWORD ptr[rdi+rcx*8+80]
-        xmm2 = _mm_add_ps(xmm2, _mm_load_ps((float*)(rdi + rcx2*8 + 80)));
-        // vaddps xmm3,xmm3,XMMWORD ptr[rdi+rcx*8+112]
-        xmm3 = _mm_add_ps(xmm3, _mm_load_ps((float*)(rdi + rcx2*8 + 112)));
+        // FMA化: vfmadd213ps xmm0,xmm7,XMMWORD ptr[rdi+rcx*8+16]
+        xmm0 = _mm_fmadd_ps(xmm0, xmm7, _mm_load_ps((float*)(rdi + rcx2*8 + 16)));
+        // FMA化: vfmadd213ps xmm1,xmm7,XMMWORD ptr[rdi+rcx*8+48]
+        xmm1 = _mm_fmadd_ps(xmm1, xmm7, _mm_load_ps((float*)(rdi + rcx2*8 + 48)));
+        // FMA化: vfmadd213ps xmm2,xmm7,XMMWORD ptr[rdi+rcx*8+80]
+        xmm2 = _mm_fmadd_ps(xmm2, xmm7, _mm_load_ps((float*)(rdi + rcx2*8 + 80)));
+        // FMA化: vfmadd213ps xmm3,xmm7,XMMWORD ptr[rdi+rcx*8+112]
+        xmm3 = _mm_fmadd_ps(xmm3, xmm7, _mm_load_ps((float*)(rdi + rcx2*8 + 112)));
 
         // vmovaps XMMWORD ptr[rax+rcx*4],xmm0
         _mm_store_ps((float*)(rax + rcx2*4), xmm0);
@@ -1901,23 +1888,14 @@ extern "C" void dotProd_m48_m16_i16_AVX2(
         // vmulps xmm3,xmm3,XMMWORD ptr[rdi+rcx*8+96]
         xmm3 = _mm_mul_ps(xmm3, _mm_load_ps((float*)(rdi + rcx2*8 + 96)));
 
-        // vmulps xmm0,xmm0,xmm7
-        xmm0 = _mm_mul_ps(xmm0, xmm7);
-        // vmulps xmm1,xmm1,xmm7
-        xmm1 = _mm_mul_ps(xmm1, xmm7);
-        // vmulps xmm2,xmm2,xmm7
-        xmm2 = _mm_mul_ps(xmm2, xmm7);
-        // vmulps xmm3,xmm3,xmm7
-        xmm3 = _mm_mul_ps(xmm3, xmm7);
-
-        // vaddps xmm0,xmm0,XMMWORD ptr[rdi+rcx*8+16]
-        xmm0 = _mm_add_ps(xmm0, _mm_load_ps((float*)(rdi + rcx2*8 + 16)));
-        // vaddps xmm1,xmm1,XMMWORD ptr[rdi+rcx*8+48]
-        xmm1 = _mm_add_ps(xmm1, _mm_load_ps((float*)(rdi + rcx2*8 + 48)));
-        // vaddps xmm2,xmm2,XMMWORD ptr[rdi+rcx*8+80]
-        xmm2 = _mm_add_ps(xmm2, _mm_load_ps((float*)(rdi + rcx2*8 + 80)));
-        // vaddps xmm3,xmm3,XMMWORD ptr[rdi+rcx*8+112]
-        xmm3 = _mm_add_ps(xmm3, _mm_load_ps((float*)(rdi + rcx2*8 + 112)));
+        // FMA化: vfmadd213ps xmm0,xmm7,XMMWORD ptr[rdi+rcx*8+16]
+        xmm0 = _mm_fmadd_ps(xmm0, xmm7, _mm_load_ps((float*)(rdi + rcx2*8 + 16)));
+        // FMA化: vfmadd213ps xmm1,xmm7,XMMWORD ptr[rdi+rcx*8+48]
+        xmm1 = _mm_fmadd_ps(xmm1, xmm7, _mm_load_ps((float*)(rdi + rcx2*8 + 48)));
+        // FMA化: vfmadd213ps xmm2,xmm7,XMMWORD ptr[rdi+rcx*8+80]
+        xmm2 = _mm_fmadd_ps(xmm2, xmm7, _mm_load_ps((float*)(rdi + rcx2*8 + 80)));
+        // FMA化: vfmadd213ps xmm3,xmm7,XMMWORD ptr[rdi+rcx*8+112]
+        xmm3 = _mm_fmadd_ps(xmm3, xmm7, _mm_load_ps((float*)(rdi + rcx2*8 + 112)));
 
         // vmovaps XMMWORD ptr[rax+rcx*4],xmm0
         _mm_store_ps((float*)(rax + rcx2*4), xmm0);
