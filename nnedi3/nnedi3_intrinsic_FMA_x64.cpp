@@ -589,6 +589,17 @@ extern "C" void computeNetwork0new_AVX2(const float* datai_raw, const float* wei
     // vpaddd ymm3,ymm3,ymm7
     ymm3 = _mm256_add_epi32(ymm3, ymm7_temp);
 
+    // 4番目の16入力と各ニューロンの重みを積和する
+    ymm7 = _mm256_load_si256((const __m256i*)(datai + 48));
+    ymm4 = _mm256_madd_epi16(ymm7, _mm256_load_si256((const __m256i*)(rax + 96)));
+    ymm5 = _mm256_madd_epi16(ymm7, _mm256_load_si256((const __m256i*)(rax + 104)));
+    ymm6 = _mm256_madd_epi16(ymm7, _mm256_load_si256((const __m256i*)(rax + 112)));
+    ymm7_temp = _mm256_madd_epi16(ymm7, _mm256_load_si256((const __m256i*)(rax + 120)));
+    ymm0 = _mm256_add_epi32(ymm0, ymm4);
+    ymm1 = _mm256_add_epi32(ymm1, ymm5);
+    ymm2 = _mm256_add_epi32(ymm2, ymm6);
+    ymm3 = _mm256_add_epi32(ymm3, ymm7_temp);
+
     // vpunpckhqdq ymm4,ymm0,ymm1
     ymm4 = _mm256_unpackhi_epi64(ymm0, ymm1);
     // vpunpckhqdq ymm5,ymm2,ymm3

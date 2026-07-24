@@ -68,6 +68,8 @@ shared_module('nnedi3',
   cuda_args : cuda_args,
   link_args : link_args + (host_machine.system() == 'linux' ? [
     '-Wl,--no-undefined,-z,noexecstack',
+    # AviSynth本体にも同名のThreadPoolがあるため、プラグイン内部参照を自身へ束縛する
+    '-Wl,-Bsymbolic-functions',
     '-Wl,--version-script=' + join_paths(meson.current_source_dir(), 'nnedi3_linux.map'),
   ] : []),
   link_depends : host_machine.system() == 'linux' ? files('nnedi3_linux.map') : [],
