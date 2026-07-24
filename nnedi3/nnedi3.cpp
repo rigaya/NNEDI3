@@ -738,9 +738,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 		}
 		else // use float dot products in first layer
 		{
-			double half = ((int)1 << bits_per_pixel)-1;
-
-			if (pixelsize==4) half = 1.0;
+			double half = pixelsize == 4 ? 1.0 : ((int)1 << bits_per_pixel)-1;
 			half /= 2.0;
 
 			// Factor mean removal and 1.0/half scaling
