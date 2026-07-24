@@ -57,7 +57,9 @@ shared_module('nnedi3',
   dependencies : [avisynth_dep, common_dep, cuda_dep, threads_dep, nnedi3_avx2_dep] + (not (host_machine.system() == 'windows') ? [binary1_dep] : []),
   cpp_args : cpp_args,
   cuda_args : cuda_args,
-  link_args : link_args,
+  link_args : link_args + (host_machine.system() == 'linux' ? [
+    '-Wl,--no-undefined,-z,noexecstack',
+  ] : []),
   name_prefix : '',
   install : true,
   install_dir : get_option('libdir')

@@ -31,6 +31,7 @@
 
 #define myalignedfree(ptr) if (ptr!=NULL) { _aligned_free(ptr); ptr=NULL;}
 
+#if defined(_WIN32) || defined(_WIN64)
 extern "C" void convYUY2to422_MMX(const uint8_t *src,uint8_t *py,uint8_t *pu,uint8_t *pv,int pitch1,int pitch2Y,int pitch2UV,
 	int width,int height);
 extern "C" void convYUY2to422_SSE2(const uint8_t *src,uint8_t *py,uint8_t *pu,uint8_t *pv,int pitch1,int pitch2Y,int pitch2UV,
@@ -43,6 +44,7 @@ extern "C" void conv422toYUY2_SSE2(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *
 	int width,int height);
 extern "C" void conv422toYUY2_AVX(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *dst,int pitch1Y,int pitch1UV,int pitch2,
 	int width,int height);
+#endif
 
 
 #define IS_BIT_SET(bitfield, bit) ((bitfield) & (1<<(bit)) ? true : false)
@@ -106,7 +108,11 @@ static int CPUCheckForExtensions()
   bool avx_supported = IS_BIT_SET(cpuinfo[2], 28);
   if (xgetbv_supported && avx_supported)
   {
+#if defined(_WIN32) || defined(_WIN64)
+    unsigned long long xgetbv0 = _xgetbv(_XCR_XFEATURE_ENABLED_MASK);
+#else
     unsigned long long xgetbv0 = __xgetbv__(_XCR_XFEATURE_ENABLED_MASK);
+#endif
     if ((xgetbv0 & 0x6ull) == 0x6ull) {
       result |= CPUF_AVX;
       if (IS_BIT_SET(cpuinfo[2], 12))
@@ -753,6 +759,7 @@ PlanarFrame& PlanarFrame::operator=(PlanarFrame &ob2)
 void PlanarFrame::convYUY2to422(const uint8_t *src,uint8_t *py,uint8_t *pu,uint8_t *pv,int pitch1,int pitch2Y,int pitch2UV,
 	int width,int height)
 {
+#if defined(_WIN32) || defined(_WIN64)
 	if (((cpu&CPUF_AVX)!=0) && useAVX && (((size_t(src)|pitch1)&15)==0))
 		convYUY2to422_AVX(src,py,pu,pv,pitch1,pitch2Y,pitch2UV,(width+7)>>3,height);
 	else
@@ -786,12 +793,34 @@ void PlanarFrame::convYUY2to422(const uint8_t *src,uint8_t *py,uint8_t *pu,uint8
 			}
 		}
 	}
+#else
+	width >>= 1;
+	for (int y=0; y<height; ++y)
+	{
+		int x_1=0,x_2=0;
+
+		for (int x=0; x<width; ++x)
+		{
+			py[x_1] = src[x_2];
+			pu[x] = src[x_2+1];
+			py[x_1+1] = src[x_2+2];
+			pv[x] = src[x_2+3];
+			x_1+=2;
+			x_2+=4;
+		}
+		py += pitch2Y;
+		pu += pitch2UV;
+		pv += pitch2UV;
+		src += pitch1;
+	}
+#endif
 }
 
 
 void PlanarFrame::conv422toYUY2(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *dst,int pitch1Y,int pitch1UV,int pitch2,
 	int width,int height)
 {
+#if defined(_WIN32) || defined(_WIN64)
 	const int w_8=(width+7)>>3;
 	const int modulo2=pitch2-(w_8 << 4);
 
@@ -826,6 +855,27 @@ void PlanarFrame::conv422toYUY2(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *dst
 			}
 		}
 	}
+#else
+	width >>= 1;
+	for (int y=0; y<height; ++y)
+	{
+		int x_1=0,x_2=0;
+
+		for (int x=0; x<width; ++x)
+		{
+			dst[x_2] = py[x_1];
+			dst[x_2+1] = pu[x];
+			dst[x_2+2] = py[x_1+1];
+			dst[x_2+3] = pv[x];
+			x_1+=2;
+			x_2+=4;
+		}
+		py += pitch1Y;
+		pu += pitch1UV;
+		pv += pitch1UV;
+		dst += pitch2;
+	}
+#endif
 }
 
 

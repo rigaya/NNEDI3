@@ -139,6 +139,43 @@ static ThreadPoolInterface *poolInterface;
 // commonのcppを取り入れる
 #include "DebugWriter.cpp"
 
+static constexpr bool usesSIMDWeightLayout(const int opt)
+{
+	return opt > 1;
+}
+
+static constexpr bool usesAVX2WeightLayout(const int opt)
+{
+	return opt >= 5;
+}
+
+static constexpr bool usesAVX2NewPrescreenerWeightLayout(const int opt, const int bitsPerPixel)
+{
+	// 15/16 bit は AVX2 版 prescreener を使わず C 版へ戻す。
+	return usesAVX2WeightLayout(opt) && bitsPerPixel <= 14;
+}
+
+#if !(defined(_WIN32) || defined(_WIN64))
+static constexpr int normalizeLinuxOpt(const int requestedOpt, const int cpuFlags)
+{
+	const bool hasAVX2FMA3 = (cpuFlags & CPUF_AVX2) != 0 && (cpuFlags & CPUF_FMA3) != 0;
+
+	// Linux では C と AVX2+FMA3 の組み合わせだけを公開する。
+	if (requestedOpt == 0 || requestedOpt >= 5)
+		return hasAVX2FMA3 ? 6 : 1;
+	return 1;
+}
+
+static_assert(normalizeLinuxOpt(0, CPUF_AVX2 | CPUF_FMA3) == 6, "Linux の自動選択で AVX2+FMA3 を選べません");
+static_assert(normalizeLinuxOpt(0, CPUF_AVX2) == 1, "Linux で FMA3 なしの AVX2 を選択しています");
+static_assert(normalizeLinuxOpt(4, CPUF_AVX2 | CPUF_FMA3) == 1, "Linux の opt=2,3,4 は C へ正規化する必要があります");
+static_assert(normalizeLinuxOpt(5, CPUF_AVX2 | CPUF_FMA3) == 6, "Linux の opt=5 は AVX2+FMA3 へ正規化する必要があります");
+static_assert(normalizeLinuxOpt(7, CPUF_FMA3) == 1, "Linux で AVX2 なしの FMA3 を選択しています");
+static_assert(!usesSIMDWeightLayout(normalizeLinuxOpt(3, CPUF_AVX2 | CPUF_FMA3)), "C 版には neuron-major の重みが必要です");
+static_assert(usesAVX2WeightLayout(normalizeLinuxOpt(6, CPUF_AVX2 | CPUF_FMA3)), "AVX2+FMA3 版には AVX2 配列の重みが必要です");
+static_assert(!usesAVX2NewPrescreenerWeightLayout(normalizeLinuxOpt(6, CPUF_AVX2 | CPUF_FMA3), 15), "15/16 bit の C prescreener には C 配列の重みが必要です");
+#endif
+
 static int GetDeviceTypes(const PClip& clip)
 {
   int devtypes = (clip->GetVersion() >= 5) ? clip->SetCacheHints(CACHE_GET_DEV_TYPE, 0) : 0;
@@ -247,6 +284,38 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 		if (threads>1) poolInterface->DeAllocateAllThreads(true);
 		env->ThrowError("nnedi3: range must be [0,4]!\n");
 	}
+
+#if defined(_WIN32) || defined(_WIN64)
+	if (opt==0)
+	{
+		const int CPUF=env->GetCPUFlags();
+
+		if (((CPUF & CPUF_FMA4)!=0) && ((CPUF & CPUF_AVX2)!=0)) opt=7;
+		else
+		{
+			if (((CPUF & CPUF_FMA3)!=0) && ((CPUF & CPUF_AVX2)!=0)) opt=6;
+			else
+			{
+				if ((CPUF & CPUF_AVX2)!=0) opt=5;
+				else
+				{
+					if ((CPUF & CPUF_AVX)!= 0) opt = 4;
+					else
+					{
+						if ((CPUF & CPUF_SSE4_1)!=0) opt=3;
+						else
+						{
+							if ((CPUF & CPUF_SSE2)!=0) opt=2;
+							else opt=1;
+						}
+					}
+				}
+			}
+		}
+	}
+#else
+	opt=normalizeLinuxOpt(opt,env->GetCPUFlags());
+#endif
 	
 	grey = vi.IsY();
 	isRGBPfamily = vi.IsPlanarRGB() || vi.IsPlanarRGBA();
@@ -418,38 +487,6 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 		env->ThrowError("nnedi3: Error while allocating planar dstPF!");
 	}
 
-	if (opt==0)
-	{
-		const int CPUF=env->GetCPUFlags();
-
-		if (((CPUF & CPUF_FMA4)!=0) && ((CPUF & CPUF_AVX2)!=0)) opt=7;
-		else
-		{
-			if (((CPUF & CPUF_FMA3)!=0) && ((CPUF & CPUF_AVX2)!=0)) opt=6;
-			else
-			{
-				if ((CPUF & CPUF_AVX2)!=0) opt=5;
-				else
-				{
-					if ((CPUF & CPUF_AVX)!= 0) opt = 4;
-					else
-					{
-						if ((CPUF & CPUF_SSE4_1)!=0) opt=3;
-						else
-						{
-							if ((CPUF & CPUF_SSE2)!=0) opt=2;
-							else opt=1;
-						}
-					}
-				}
-			}
-		}
-
-		//char buf[512];
-		//sprintf_s(buf,512,"nnedi3: auto-detected opt setting = %d (%d)\n",opt,CPUF);
-		//OutputDebugString(buf);
-	}
-
 	const int dims0 = 49*4+5*4+9*4;
 	const int dims0new = 4*65+4*5;
 	const int dims1 = (xdiaTable[nsize]*ydiaTable[nsize]+1) << (nnsTablePow2[nns]+1);
@@ -537,7 +574,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 
 		j_a=0,j_b=0;
-		if (opt>=5)
+		if (usesAVX2NewPrescreenerWeightLayout(opt,bits_per_pixel))
 		{
 			for (int j=0; j<4; j++)
 			{
@@ -680,7 +717,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			}
 			memcpy(wf+4,bdata+4*48,(dims0-4*48)*sizeof(float));
 
-			if ((opt>1) && (bits_per_pixel<=14))// shuffle weight order for asm
+			if (usesSIMDWeightLayout(opt) && (bits_per_pixel<=14))// shuffle weight order for asm
 			{
 				int16_t *rs = (int16_t*)malloc(dims0*sizeof(float));
 
@@ -694,7 +731,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 				memcpy(rs,weights0,dims0*sizeof(float));
 				j_a=0;
-				if (opt>=5)
+				if (usesAVX2WeightLayout(opt))
 				{
 					for (int j=0; j<4; j++)
 					{
@@ -736,7 +773,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			}
 			memcpy(weights0+4*48,bdata+4*48,(dims0-4*48)*sizeof(float));
 
-			if (opt>1) // shuffle weight order for asm
+			if (usesSIMDWeightLayout(opt)) // shuffle weight order for asm
 			{
 				float *wf = weights0;
 				float *rf = (float*)malloc(dims0*sizeof(float));
@@ -750,7 +787,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 				memcpy(rf,weights0,dims0*sizeof(float));
 				j_a=0;
-				if (opt>=5)
+				if (usesAVX2WeightLayout(opt))
 				{
 					for (int j=0; j<4; j++)
 					{
@@ -872,7 +909,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
       // CUDA用に並べ替え前のデータを取っておく
       memcpy(weight1cuda.get() + i * dims1, weights1[i], dims1 * sizeof(float));
 
-			if ((opt>1) && (bits_per_pixel<=14)) // shuffle weight order for asm
+			if (usesSIMDWeightLayout(opt) && (bits_per_pixel<=14)) // shuffle weight order for asm
 			{
 				int16_t *rs = (int16_t *)malloc(nnst2*asize*sizeof(int16_t));
 				if (rs==NULL)
@@ -885,7 +922,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 				memcpy(rs,ws,nnst2*asize*sizeof(int16_t));
 				j_a=0;
-				if (opt>=5)
+				if (usesAVX2WeightLayout(opt))
 				{
 					for (int j=0; j<nnst2; j++)
 					{
@@ -919,9 +956,9 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			j_a=0;
 			j_d=asize+1;
 
-			if (opt>1) // shuffle weight order for asm
+			if (usesSIMDWeightLayout(opt)) // shuffle weight order for asm
 			{
-				if (opt>=5)
+				if (usesAVX2WeightLayout(opt))
 				{
 					for (int j=0; j<nnst2; j++)
 					{
