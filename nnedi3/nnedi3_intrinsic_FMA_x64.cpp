@@ -337,8 +337,16 @@ extern "C" void computeNetwork0_FMA3(const float *input, const float *weights, u
     _mm256_zeroupper();
 }
 
-extern "C" int computeNetwork0_i16_AVX2(const int16_t* inputf, const int16_t* weightsf, uint8_t* ptr_d) {
-    int result = 1;  // raxの初期値
+extern "C"
+#if defined(__GNUC__) && !defined(__clang__)
+__attribute__((optimize("fp-contract=off")))
+#endif
+void computeNetwork0_i16_AVX2(const float* inputf_raw, const float* weightsf_raw, uint8_t* ptr_d) {
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
+    const int16_t* inputf = reinterpret_cast<const int16_t*>(inputf_raw);
+    const int16_t* weightsf = reinterpret_cast<const int16_t*>(weightsf_raw);
 
     // vmovdqa ymm7,YMMWORD ptr [rcx]
     __m256i ymm7 = _mm256_load_si256((__m256i*)inputf);
@@ -448,14 +456,12 @@ extern "C" int computeNetwork0_i16_AVX2(const int16_t* inputf, const int16_t* we
     // vmulps xmm1,xmm1,XMMWORD ptr [rdx+416]
     xmm1 = _mm_mul_ps(xmm1, _mm_load_ps((float*)(weightsf + 208)));
     // vmulps xmm2,xmm2,XMMWORD ptr [rdx+416+16]
-    xmm2_ps = _mm_mul_ps(xmm2_ps, _mm_load_ps((float*)(weightsf + 212)));
+    xmm2_ps = _mm_mul_ps(xmm2_ps, _mm_load_ps((float*)(weightsf + 216)));
     // vmulps xmm3,xmm3,XMMWORD ptr [rdx+416+32]
-    xmm3 = _mm_mul_ps(xmm3, _mm_load_ps((float*)(weightsf + 216)));
+    xmm3 = _mm_mul_ps(xmm3, _mm_load_ps((float*)(weightsf + 224)));
     // vmulps xmm4,xmm4,XMMWORD ptr [rdx+416+48]
-    xmm4_ps = _mm_mul_ps(xmm4_ps, _mm_load_ps((float*)(weightsf + 220)));
+    xmm4_ps = _mm_mul_ps(xmm4_ps, _mm_load_ps((float*)(weightsf + 232)));
 
-    // vpxor xmm0,xmm0,xmm0
-    xmm0_ps = _mm_setzero_ps();
     // vaddps xmm1,xmm1,xmm2
     xmm1 = _mm_add_ps(xmm1, xmm2_ps);
     // vaddps xmm3,xmm3,xmm4
@@ -464,27 +470,55 @@ extern "C" int computeNetwork0_i16_AVX2(const int16_t* inputf, const int16_t* we
     xmm1 = _mm_add_ps(xmm1, xmm3);
     // mov rcx,r8
     // vaddps xmm1,xmm1,XMMWORD ptr [rdx+416+64]
-    xmm1 = _mm_add_ps(xmm1, _mm_load_ps((float*)(weightsf + 224)));
-    // vcmpps xmm1,xmm1,xmm0,1
-    xmm1 = _mm_cmplt_ps(xmm1, xmm0_ps);
-    // vpackssdw xmm1,xmm1,xmm0
-    xmm1 = _mm_castsi128_ps(_mm_packs_epi32(_mm_castps_si128(xmm1), _mm_castps_si128(xmm0_ps)));
-    // vpacksswb xmm1,xmm1,xmm0
-    xmm1 = _mm_castsi128_ps(_mm_packs_epi16(_mm_castps_si128(xmm1), _mm_castps_si128(xmm0_ps)));
+    xmm1 = _mm_add_ps(xmm1, _mm_load_ps((float*)(weightsf + 240)));
 
-    // vmovd eax,xmm1
-    uint32_t eax = _mm_cvtsi128_si32(_mm_castps_si128(xmm1));
-    // xor eax,0FFFFFFFFh
-    eax ^= 0xFFFFFFFF;
-    // and eax,001010101h
-    eax &= 0x01010101;
-    // mov [rcx],eax
-    *ptr_d = eax;
+    // 第2層のElliott活性化
+    __m128 xmm7 = xmm1;
+    xmm1 = _mm_and_ps(xmm1, sign_bits_f);
+    __m128 xmm3_input = xmm0_ps;
+    xmm1 = _mm_add_ps(xmm1, ones_f);
+    xmm1 = _mm_rcp_ps(xmm1);
+    xmm7 = _mm_mul_ps(xmm7, xmm1);
+
+    // 最終層: 第1層4値と第2層4値から4出力を計算する
+    __m128 xmm0_l0 = _mm_shuffle_ps(xmm0_ps, xmm0_ps, 0x00);
+    __m128 xmm1_l1 = _mm_shuffle_ps(xmm3_input, xmm3_input, 0x55);
+    __m128 xmm2_l2 = _mm_shuffle_ps(xmm3_input, xmm3_input, 0xAA);
+    __m128 xmm3_l3 = _mm_shuffle_ps(xmm3_input, xmm3_input, 0xFF);
+
+    xmm0_l0 = _mm_mul_ps(xmm0_l0, _mm_load_ps((const float*)(weightsf + 248)));
+    xmm1_l1 = _mm_mul_ps(xmm1_l1, _mm_load_ps((const float*)(weightsf + 256)));
+    xmm2_l2 = _mm_mul_ps(xmm2_l2, _mm_load_ps((const float*)(weightsf + 264)));
+    xmm3_l3 = _mm_mul_ps(xmm3_l3, _mm_load_ps((const float*)(weightsf + 272)));
+
+    __m128 xmm4_l4 = _mm_shuffle_ps(xmm7, xmm7, 0x00);
+    __m128 xmm5_l5 = _mm_shuffle_ps(xmm7, xmm7, 0x55);
+    __m128 xmm6_l6 = _mm_shuffle_ps(xmm7, xmm7, 0xAA);
+    __m128 xmm7_l7 = _mm_shuffle_ps(xmm7, xmm7, 0xFF);
+
+    xmm4_l4 = _mm_mul_ps(xmm4_l4, _mm_load_ps((const float*)(weightsf + 280)));
+    xmm5_l5 = _mm_mul_ps(xmm5_l5, _mm_load_ps((const float*)(weightsf + 288)));
+    xmm6_l6 = _mm_mul_ps(xmm6_l6, _mm_load_ps((const float*)(weightsf + 296)));
+    xmm7_l7 = _mm_mul_ps(xmm7_l7, _mm_load_ps((const float*)(weightsf + 304)));
+
+    xmm0_l0 = _mm_add_ps(xmm0_l0, xmm1_l1);
+    xmm2_l2 = _mm_add_ps(xmm2_l2, xmm3_l3);
+    xmm4_l4 = _mm_add_ps(xmm4_l4, xmm5_l5);
+    xmm6_l6 = _mm_add_ps(xmm6_l6, xmm7_l7);
+    xmm0_l0 = _mm_add_ps(xmm0_l0, xmm2_l2);
+    xmm4_l4 = _mm_add_ps(xmm4_l4, xmm6_l6);
+    xmm0_l0 = _mm_add_ps(xmm0_l0, xmm4_l4);
+    xmm0_l0 = _mm_add_ps(xmm0_l0, _mm_load_ps((const float*)(weightsf + 312)));
+
+    // SIMD用配置の出力laneは0,2,1,3の順。max(out[0],out[1]) >= max(out[2],out[3])ならprescreenerを通す。
+    __m128 high_pair = _mm_movehl_ps(xmm0_l0, xmm0_l0);
+    __m128 pair_max = _mm_max_ps(xmm0_l0, high_pair);
+    __m128 second = _mm_castsi128_ps(_mm_shufflelo_epi16(_mm_castps_si128(pair_max), 0x0E));
+    *ptr_d = _mm_comigt_ss(second, pair_max) ? 0 : 1;
 
     // vzeroupper
     _mm256_zeroupper();
 
-    return result;
 }
 
 // computeNetwork0new_AVX2 proc datai:dword,weights:dword,ptr_d:dword
@@ -726,9 +760,9 @@ extern "C" void uc2f48_AVX2(const uint8_t* ptr_t, int pitch, float* ptr_p) {
     } else {
         // unaligned_1:
         // vmovdqu xmm0,XMMWORD PTR[rax]
-        __m128i xmm0 = _mm_loadu_si128((__m128i*)rax);
+        xmm0 = _mm_loadu_si128((__m128i*)rax);
         // vmovdqu xmm2,XMMWORD PTR[rax+rcx*2]
-        __m128i xmm2 = _mm_loadu_si128((__m128i*)(rax + rcx * 2));
+        xmm2 = _mm_loadu_si128((__m128i*)(rax + rcx * 2));
         // vmovhlps xmm1,xmm4,xmm0
         __m128i xmm1 = _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(_mm256_castsi256_si128(ymm4)), _mm_castsi128_ps(xmm0)));
         // vmovhlps xmm3,xmm4,xmm2
@@ -843,11 +877,11 @@ extern "C" void uc2f48_AVX2(const uint8_t* ptr_t, int pitch, float* ptr_p) {
 // ptr_t = rcx
 // pitch = edx
 // ptr_p = r8
-extern "C" void uc2f48_AVX2_16(const int16_t* ptr_t, int pitch, float* ptr_p) {
+extern "C" void uc2f48_AVX2_16(const uint8_t* ptr_t, int pitch, float* ptr_p) {
     // .endprolog
 
     // mov rax,rcx
-    const int16_t* rax = ptr_t;
+    const uint8_t* rax = ptr_t;
     // movsxd rcx,edx
     int64_t rcx = pitch;
     // vpxor ymm4,ymm4,ymm4
@@ -3195,7 +3229,7 @@ extern "C" void extract_m8_i16_AVX2_16(
     _mm256_zeroupper();
 }
 
-void extract_m8_i16_AVX2_16_2(
+extern "C" void extract_m8_i16_AVX2_16_2(
     const uint8_t *srcp, // rcx
     int stride,         // edx
     int xdia,           // r8d
@@ -3406,256 +3440,131 @@ void extract_m8_i16_AVX2_16_2(
     _mm256_zeroupper();
 }
 
-extern "C" void extract_m8_FMA3_16(
-    char* srcp,     // rcx
-    int stride,     // edx
-    int xdia,       // r8d
-    int ydia,       // r9d
-    char* mstd,     // [rbp+48]
-    char* input     // [rbp+56]
+extern "C"
+#if defined(__GNUC__) && !defined(__clang__)
+__attribute__((optimize("fp-contract=off")))
+#endif
+void extract_m8_FMA3_16(
+    const uint8_t* srcp,
+    int stride,
+    int xdia,
+    int ydia,
+    float* mstd,
+    float* input
 ) {
-    // レジスタの保存
-    __m128 xmm6, xmm7;
-    __m256 ymm0, ymm1, ymm2, ymm3, ymm4, ymm5, ymm6, ymm7;
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
+    __m256 sum = _mm256_setzero_ps();
+    __m256 sumsq = _mm256_setzero_ps();
 
-    // 定数の設定
-    const int r10 = 4;
-    const int r11 = 16;
-    const int r12 = 32;
-    const int r13 = 128;
-    const int r14 = 512;
-
-    // メインループ
-    for (int n = 0; n < r10; n++) {
-        char* rcx = srcp;
-        ymm0 = _mm256_setzero_ps();
-        ymm1 = _mm256_setzero_ps();
-        ymm2 = _mm256_setzero_ps();
-        ymm3 = _mm256_setzero_ps();
-
-        for (int len = xdia; len > 0; len -= r12) {
-            // vmovaps ymm7,YMMWORD ptr[rcx]
-            ymm7 = _mm256_load_ps((float*)rcx);
-            
-            // vmulps ymm4,ymm7,YMMWORD ptr[rdi]
-            ymm4 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)input));
-            
-            // vmulps ymm5,ymm7,YMMWORD ptr[rdi+r12]
-            ymm5 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + r12)));
-            
-            // vmulps ymm6,ymm7,YMMWORD ptr[rdi+2*r12]
-            ymm6 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + 2*r12)));
-            
-            // vmulps ymm7,ymm7,YMMWORD ptr[rdi+96]
-            ymm7 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + 96)));
-            
-            // vaddps ymm0,ymm0,ymm4
-            ymm0 = _mm256_add_ps(ymm0, ymm4);
-            
-            // vaddps ymm1,ymm1,ymm5
-            ymm1 = _mm256_add_ps(ymm1, ymm5);
-            
-            // vaddps ymm2,ymm2,ymm6
-            ymm2 = _mm256_add_ps(ymm2, ymm6);
-            
-            // vaddps ymm3,ymm3,ymm7
-            ymm3 = _mm256_add_ps(ymm3, ymm7);
-
-            // 2行目の処理
-            ymm7 = _mm256_load_ps((float*)(rcx + r12));
-            ymm4 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + r13)));
-            ymm5 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + 160)));
-            ymm6 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + 192)));
-            ymm7 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + 224)));
-            ymm0 = _mm256_add_ps(ymm0, ymm4);
-            ymm1 = _mm256_add_ps(ymm1, ymm5);
-            ymm2 = _mm256_add_ps(ymm2, ymm6);
-            ymm3 = _mm256_add_ps(ymm3, ymm7);
-
-            // 3行目の処理
-            ymm7 = _mm256_load_ps((float*)(rcx + 2*r12));
-            ymm4 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + 2*r13)));
-            ymm5 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + 288)));
-            ymm6 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + 320)));
-            ymm7 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + 352)));
-            ymm0 = _mm256_add_ps(ymm0, ymm4);
-            ymm1 = _mm256_add_ps(ymm1, ymm5);
-            ymm2 = _mm256_add_ps(ymm2, ymm6);
-            ymm3 = _mm256_add_ps(ymm3, ymm7);
-
-            // 4行目の処理
-            ymm7 = _mm256_load_ps((float*)(rcx + 96));
-            ymm4 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + 384)));
-            ymm5 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + 416)));
-            ymm6 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + 448)));
-            ymm7 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + 480)));
-            ymm0 = _mm256_add_ps(ymm0, ymm4);
-            ymm1 = _mm256_add_ps(ymm1, ymm5);
-            ymm2 = _mm256_add_ps(ymm2, ymm6);
-            ymm3 = _mm256_add_ps(ymm3, ymm7);
-
-            rcx += r13;
-            input += r14;
+    // Windows ASMと同じく2行を組にし、各xで上段、下段の順に加算する。
+    for (int y = 0; y < ydia; y += 2) {
+        const uint8_t* src_row0 = srcp + static_cast<ptrdiff_t>(y) * stride * 2;
+        const uint8_t* src_row1 = src_row0 + stride * 2;
+        float* dst_row0 = input + y * xdia;
+        float* dst_row1 = dst_row0 + xdia;
+        for (int x = 0; x < xdia; x += 8) {
+            const __m128i pixels16_0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src_row0 + x * 2));
+            const __m128i pixels16_1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src_row1 + x * 2));
+            const __m256 pixels0 = _mm256_cvtepi32_ps(_mm256_cvtepu16_epi32(pixels16_0));
+            const __m256 pixels1 = _mm256_cvtepi32_ps(_mm256_cvtepu16_epi32(pixels16_1));
+            _mm256_storeu_ps(dst_row0 + x, pixels0);
+            _mm256_storeu_ps(dst_row1 + x, pixels1);
+            sum = _mm256_add_ps(sum, pixels0);
+            sum = _mm256_add_ps(sum, pixels1);
+            sumsq = _mm256_fmadd_ps(pixels0, pixels0, sumsq);
+            sumsq = _mm256_fmadd_ps(pixels1, pixels1, sumsq);
         }
-
-        // 水平加算
-        __m128 xmm4 = _mm256_extractf128_ps(ymm0, 1);
-        __m128 xmm5 = _mm256_extractf128_ps(ymm1, 1);
-        __m128 xmm6 = _mm256_extractf128_ps(ymm2, 1);
-        __m128 xmm7 = _mm256_extractf128_ps(ymm3, 1);
-        
-        xmm4 = _mm_add_ps(_mm256_castps256_ps128(ymm0), xmm4);
-        xmm5 = _mm_add_ps(_mm256_castps256_ps128(ymm1), xmm5);
-        xmm6 = _mm_add_ps(_mm256_castps256_ps128(ymm2), xmm6);
-        xmm7 = _mm_add_ps(_mm256_castps256_ps128(ymm3), xmm7);
-
-        xmm4 = _mm_hadd_ps(xmm4, xmm5);
-        xmm6 = _mm_hadd_ps(xmm6, xmm7);
-        xmm4 = _mm_hadd_ps(xmm4, xmm6);
-
-        _mm_store_ps((float*)input, xmm4);
-        input += r11;
     }
 
-    // 最終処理
-    float istd_val = *(float*)mstd;
-    xmm7 = _mm_set1_ps(istd_val);
-    ymm7 = _mm256_insertf128_ps(_mm256_castps128_ps256(xmm7), xmm7, 1);
+    const __m128 sum_high = _mm256_extractf128_ps(sum, 1);
+    const __m128 sumsq_high = _mm256_extractf128_ps(sumsq, 1);
+    __m128 sum_total = _mm_add_ps(_mm256_castps256_ps128(sum), sum_high);
+    __m128 sumsq_total = _mm_add_ps(_mm256_castps256_ps128(sumsq), sumsq_high);
+    sum_total = _mm_add_ps(sum_total, _mm_movehl_ps(sum_high, sum_total));
+    sumsq_total = _mm_add_ps(sumsq_total, _mm_movehl_ps(sumsq_high, sumsq_total));
+    sum_total = _mm_add_ss(sum_total, _mm_castsi128_ps(_mm_shufflelo_epi16(_mm_castps_si128(sum_total), 14)));
+    sumsq_total = _mm_add_ss(sumsq_total, _mm_castsi128_ps(_mm_shufflelo_epi16(_mm_castps_si128(sumsq_total), 14)));
 
-    for (int i = 0; i < xdia; i += r11) {
-        __m256 ymm0 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + i*4)));
-        __m256 ymm2 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(input + i*4 + 32)));
-        ymm0 = _mm256_add_ps(ymm0, _mm256_load_ps((float*)(mstd + i*4)));
-        ymm2 = _mm256_add_ps(ymm2, _mm256_load_ps((float*)(mstd + i*4 + 32)));
-        _mm256_store_ps((float*)(input + i*4), ymm0);
-        _mm256_store_ps((float*)(input + i*4 + 32), ymm2);
+    const __m128 inv_count = _mm_rcp_ss(_mm_set_ss(static_cast<float>(xdia * ydia)));
+    const __m128 mean = _mm_mul_ss(sum_total, inv_count);
+    const __m128 average_square = _mm_mul_ss(sumsq_total, inv_count);
+    const __m128 variance = _mm_sub_ss(average_square, _mm_mul_ss(mean, mean));
+
+    mstd[0] = _mm_cvtss_f32(mean);
+    if (_mm_cvtss_f32(variance) <= FLT_EPSILON) {
+        mstd[1] = 0.0f;
+        mstd[2] = 0.0f;
+    } else {
+        const __m128 inv_stddev = _mm_rsqrt_ss(variance);
+        mstd[1] = _mm_cvtss_f32(_mm_rcp_ss(inv_stddev));
+        mstd[2] = _mm_cvtss_f32(inv_stddev);
     }
+    mstd[3] = 0.0f;
+
+    _mm256_zeroupper();
 }
 
-extern "C" void extract_m8_FMA3_32(
-    char* srcp,     // rcx
-    int stride,     // edx
-    int xdia,       // r8d
-    int ydia,       // r9d
-    char* mstd,     // [rbp+48]
-    char* input     // [rbp+56]
+extern "C"
+#if defined(__GNUC__) && !defined(__clang__)
+__attribute__((optimize("fp-contract=off")))
+#endif
+void extract_m8_FMA3_32(
+    const uint8_t* srcp,
+    int stride,
+    int xdia,
+    int ydia,
+    float* mstd,
+    float* input
 ) {
-    // レジスタの保存
-    __m128 xmm6, xmm7;
-    __m256 ymm0, ymm1, ymm2, ymm3, ymm5, ymm6;
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
+    __m256 sum = _mm256_setzero_ps();
+    __m256 sumsq = _mm256_setzero_ps();
 
-    // 定数の設定
-    const int r10 = 2;
-    const int r11 = 8;
-    const int r12 = 32;
-
-    // メイン処理
-    char* rax = srcp;
-    int64_t rbx = stride;
-    int rdi = xdia;
-    char* rsi = input;
-    int r8 = ydia;
-
-    // 2行目へのポインタを設定
-    char* rdx = rax + rbx * 2;
-
-    // レジスタの初期化
-    ymm5 = _mm256_setzero_ps();
-    ymm6 = _mm256_setzero_ps();
-    ymm3 = _mm256_setzero_ps();
-
-    // アライメントチェック
-    bool is_aligned = ((uintptr_t)rax & 31) == 0;
-
-    // メインループ
-    for (int y = 0; y < r8; y += r10) {
-        for (int x = 0; x < rdi; x += r11) {
-            if (is_aligned) {
-                // vmovaps ymm0,YMMWORD PTR[rax+4*rcx]
-                ymm0 = _mm256_load_ps((float*)(rax + 4*x));
-                // vmovaps ymm2,YMMWORD PTR[rdx+4*rcx]
-                ymm2 = _mm256_load_ps((float*)(rdx + 4*x));
-            } else {
-                // vmovups ymm0,YMMWORD PTR[rax+4*rcx]
-                ymm0 = _mm256_loadu_ps((float*)(rax + 4*x));
-                // vmovups ymm2,YMMWORD PTR[rdx+4*rcx]
-                ymm2 = _mm256_loadu_ps((float*)(rdx + 4*x));
-            }
-
-            // vmovaps YMMWORD PTR[rsi],ymm0
-            _mm256_store_ps((float*)rsi, ymm0);
-            // vmovaps YMMWORD PTR[rsi+rdi*4],ymm2
-            _mm256_store_ps((float*)(rsi + rdi*4), ymm2);
-
-            // vaddps ymm5,ymm5,ymm0
-            ymm5 = _mm256_add_ps(ymm5, ymm0);
-            // vaddps ymm5,ymm5,ymm2
-            ymm5 = _mm256_add_ps(ymm5, ymm2);
-
-            // vfmadd231ps ymm6,ymm0,ymm0
-            ymm6 = _mm256_fmadd_ps(ymm0, ymm0, ymm6);
-            // vfmadd231ps ymm6,ymm2,ymm2
-            ymm6 = _mm256_fmadd_ps(ymm2, ymm2, ymm6);
-
-            rsi += r12;
+    for (int y = 0; y < ydia; y += 2) {
+        const uint8_t* src_row0 = srcp + static_cast<ptrdiff_t>(y) * stride * 2;
+        const uint8_t* src_row1 = src_row0 + stride * 2;
+        float* dst_row0 = input + y * xdia;
+        float* dst_row1 = dst_row0 + xdia;
+        for (int x = 0; x < xdia; x += 8) {
+            const __m256 pixels0 = _mm256_loadu_ps(reinterpret_cast<const float*>(src_row0) + x);
+            const __m256 pixels1 = _mm256_loadu_ps(reinterpret_cast<const float*>(src_row1) + x);
+            _mm256_storeu_ps(dst_row0 + x, pixels0);
+            _mm256_storeu_ps(dst_row1 + x, pixels1);
+            sum = _mm256_add_ps(sum, pixels0);
+            sum = _mm256_add_ps(sum, pixels1);
+            sumsq = _mm256_fmadd_ps(pixels0, pixels0, sumsq);
+            sumsq = _mm256_fmadd_ps(pixels1, pixels1, sumsq);
         }
-
-        // 次の行へ
-        rax += rbx * 4;
-        rdx += rbx * 4;
-        rsi += rdi * 4;
     }
 
-    // 水平加算
-    __m128 xmm0 = _mm256_extractf128_ps(ymm5, 1);
-    __m128 xmm2 = _mm256_extractf128_ps(ymm6, 1);
-    __m128 xmm5 = _mm256_castps256_ps128(ymm5);
-    xmm6 = _mm256_castps256_ps128(ymm6);
+    const __m128 sum_high = _mm256_extractf128_ps(sum, 1);
+    const __m128 sumsq_high = _mm256_extractf128_ps(sumsq, 1);
+    __m128 sum_total = _mm_add_ps(_mm256_castps256_ps128(sum), sum_high);
+    __m128 sumsq_total = _mm_add_ps(_mm256_castps256_ps128(sumsq), sumsq_high);
+    sum_total = _mm_add_ps(sum_total, _mm_movehl_ps(sum_high, sum_total));
+    sumsq_total = _mm_add_ps(sumsq_total, _mm_movehl_ps(sumsq_high, sumsq_total));
+    sum_total = _mm_add_ss(sum_total, _mm_castsi128_ps(_mm_shufflelo_epi16(_mm_castps_si128(sum_total), 14)));
+    sumsq_total = _mm_add_ss(sumsq_total, _mm_castsi128_ps(_mm_shufflelo_epi16(_mm_castps_si128(sumsq_total), 14)));
 
-    // vaddps xmm5,xmm5,xmm0
-    xmm5 = _mm_add_ps(xmm5, xmm0);
-    // vaddps xmm6,xmm6,xmm2
-    xmm6 = _mm_add_ps(xmm6, xmm2);
+    const __m128 inv_count = _mm_rcp_ss(_mm_set_ss(static_cast<float>(xdia * ydia)));
+    const __m128 mean = _mm_mul_ss(sum_total, inv_count);
+    const __m128 average_square = _mm_mul_ss(sumsq_total, inv_count);
+    const __m128 variance = _mm_sub_ss(average_square, _mm_mul_ss(mean, mean));
 
-    // 平均と分散の計算
-    int nPix = ydia * xdia;
-    float inv_n = 1.0f / static_cast<float>(nPix);
-
-    // vmovhlps xmm0,xmm0,xmm5
-    xmm0 = _mm_movehl_ps(xmm0, xmm5);
-    // vmovhlps xmm1,xmm1,xmm6
-    __m128 xmm1 = _mm_movehl_ps(xmm1, xmm6);
-
-    // vaddps xmm5,xmm5,xmm0
-    xmm5 = _mm_add_ps(xmm5, xmm0);
-    // vaddps xmm6,xmm6,xmm1
-    xmm6 = _mm_add_ps(xmm6, xmm1);
-
-    // vpshuflw xmm0,xmm5,14
-    xmm0 = _mm_castsi128_ps(_mm_shufflelo_epi16(_mm_castps_si128(xmm5), 14));
-    // vpshuflw xmm1,xmm6,14
-    xmm1 = _mm_castsi128_ps(_mm_shufflelo_epi16(_mm_castps_si128(xmm6), 14));
-
-    // vaddss xmm5,xmm5,xmm0
-    xmm5 = _mm_add_ss(xmm5, xmm0);
-    // vaddss xmm6,xmm6,xmm1
-    xmm6 = _mm_add_ss(xmm6, xmm1);
-
-    // 平均と分散の計算
-    float mean = _mm_cvtss_f32(xmm5) * inv_n;
-    float var = _mm_cvtss_f32(xmm6) * inv_n - mean * mean;
-
-    // 結果の保存
-    float* mstd_f = (float*)mstd;
-    mstd_f[0] = mean;
-
-    if (var <= FLT_EPSILON) {
-        mstd_f[1] = 0.0f;
-        mstd_f[2] = 0.0f;
+    mstd[0] = _mm_cvtss_f32(mean);
+    if (_mm_cvtss_f32(variance) <= FLT_EPSILON) {
+        mstd[1] = 0.0f;
+        mstd[2] = 0.0f;
     } else {
-        float inv_std = 1.0f / sqrtf(var);
-        mstd_f[1] = inv_std;
-        mstd_f[2] = inv_std;
+        const __m128 inv_stddev = _mm_rsqrt_ss(variance);
+        mstd[1] = _mm_cvtss_f32(_mm_rcp_ss(inv_stddev));
+        mstd[2] = _mm_cvtss_f32(inv_stddev);
     }
-    mstd_f[3] = 0.0f;
+    mstd[3] = 0.0f;
+
+    _mm256_zeroupper();
 }
