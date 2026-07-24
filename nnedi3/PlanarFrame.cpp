@@ -113,7 +113,7 @@ static int CPUCheckForExtensions()
 #else
     unsigned long long xgetbv0 = __xgetbv__(_XCR_XFEATURE_ENABLED_MASK);
 #endif
-    if ((xgetbv0 & 0x6ull) == 0x6ull) {
+    if (nnedi3_cpu_detail::Xcr0HasAvxState(xgetbv0)) {
       result |= CPUF_AVX;
       if (IS_BIT_SET(cpuinfo[2], 12))
         result |= CPUF_FMA3;
@@ -121,8 +121,7 @@ static int CPUCheckForExtensions()
       if (IS_BIT_SET(cpuinfo[1], 5))
         result |= CPUF_AVX2;
     }
-    if((xgetbv0 & (0x7ull << 5)) && // OPMASK: upper-256 enabled by OS
-       (xgetbv0 & (0x3ull << 1))) { // XMM/YMM enabled by OS
+    if (nnedi3_cpu_detail::Xcr0HasAvx512State(xgetbv0)) {
       // Verify that XCR0[7:5] = E11bE(OPMASK state, upper 256-bit of ZMM0-ZMM15 and
       // ZMM16-ZMM31 state are enabled by OS)
       /// and that XCR0[2:1] = E1bE(XMM state and YMM state are enabled by OS).

@@ -36,6 +36,22 @@
 #define PLANAR_422 2
 #define PLANAR_444 3
 
+namespace nnedi3_cpu_detail
+{
+	constexpr uint64_t XCR0_AVX_STATE_MASK = 0x06ull;
+	constexpr uint64_t XCR0_AVX512_STATE_MASK = 0xE6ull;
+
+	constexpr bool Xcr0HasAvxState(uint64_t xcr0)
+	{
+		return (xcr0 & XCR0_AVX_STATE_MASK) == XCR0_AVX_STATE_MASK;
+	}
+
+	constexpr bool Xcr0HasAvx512State(uint64_t xcr0)
+	{
+		return (xcr0 & XCR0_AVX512_STATE_MASK) == XCR0_AVX512_STATE_MASK;
+	}
+}
+
 
 class PlanarFrame
 {
