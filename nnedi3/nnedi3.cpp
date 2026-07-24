@@ -21,7 +21,9 @@
 */
 
 #include "nnedi3.h"
+#include "nnedi3_intrinsic.h"
 #include <stdint.h>
+#include <cstring>
 
 #if _MSC_VER
 #define SSE2_ASM_AVAILABLE 1
@@ -31,33 +33,6 @@
 #define SSE2_ASM_AVAILABLE 0
 #define AVX_ASM_AVAILABLE 0
 #define AVX2_ASM_AVAILABLE 1
-#endif
-
-#if AVX2_ASM_AVAILABLE
-extern "C" void computeNetwork0_FMA3(const float *input, const float *weights, uint8_t *d);
-extern "C" void computeNetwork0_i16_AVX2(const float *inputf,const float *weightsf,uint8_t *d);
-extern "C" void computeNetwork0new_AVX2(const float *datai,const float *weights,uint8_t *d);
-extern "C" void uc2f48_AVX2(const uint8_t *t,const int pitch,float *p);
-extern "C" void uc2f48_AVX2_16(const uint8_t *t, const int pitch, float *p);
-extern "C" void uc2s48_AVX2(const uint8_t *t,const int pitch,float *pf);
-extern "C" void uc2s64_AVX2(const uint8_t *t,const int pitch,float *p);
-extern "C" void dotProd_m32_m16_FMA3(const float *data, const float *weights, float *vals, const int n, const int len, const float *istd);
-extern "C" void dotProd_m48_m16_FMA3(const float *data, const float *weights, float *vals, const int n, const int len, const float *istd);
-extern "C" void dotProd_m32_m16_i16_AVX2(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
-extern "C" void dotProd_m48_m16_i16_AVX2(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
-extern "C" void e0_m16_FMA3(float *s, const int n);
-extern "C" void e1_m16_AVX2(float *s,const int n);
-extern "C" void e2_m16_AVX2(float *s,const int n);
-extern "C" int processLine0_AVX2_ASM(const uint8_t *tempu,int width,uint8_t *dstp,const uint8_t *src3p,const int src_pitch,const uint16_t *val_min_max);
-extern "C" int processLine0_AVX2_ASM_16(const uint8_t *tempu,int width,uint8_t *dstp,const uint8_t *src3p,const int src_pitch,const uint16_t *val_min_max);
-extern "C" int processLine0_AVX2_ASM_32(const uint8_t *tempu,int width,uint8_t *dstp,const uint8_t *src3p,const int src_pitch);
-extern "C" void weightedAvgElliottMul5_m16_FMA3(const float *w,const int n,float *mstd);
-extern "C" void extract_m8_FMA3(const uint8_t *srcp,const int stride,const int xdia,const int ydia,float *mstd,float *input);
-extern "C" void extract_m8_i16_AVX2(const uint8_t *srcp,const int stride,const int xdia,const int ydia,float *mstd,float *inputf);
-extern "C" void extract_m8_i16_AVX2_16(const uint8_t *srcp, const int stride, const int xdia, const int ydia, float *mstd, float *inputf);
-extern "C" void extract_m8_i16_AVX2_16_2(const uint8_t *srcp, const int stride, const int xdia, const int ydia, float *inputf,int32_t *sum,int64_t *sumsq);
-extern "C" void extract_m8_FMA3_16(const uint8_t *srcp, const int stride, const int xdia, const int ydia, float *mstd, float *input);
-extern "C" void extract_m8_FMA3_32(const uint8_t *srcp, const int stride, const int xdia, const int ydia, float *mstd, float *input);
 #endif
 
 #if SSE2_ASM_AVAILABLE
@@ -615,7 +590,9 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
     std::unique_ptr<int16_t[]> wscuda =
       std::unique_ptr<int16_t[]>(new int16_t[dims0new * 2]);
-    float *wfcuda = (float *)&wscuda[4 * 64];
+    const int cudaPrescreenerFloatCount = 4 + dims0new - 4 * 64;
+    std::unique_ptr<float[]> wfcuda =
+      std::unique_ptr<float[]>(new float[cudaPrescreenerFloatCount]);
 
 		// Calculate mean weight of each first layer neuron
 		j_a=0;
@@ -656,7 +633,11 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			j_a+=64;
 		}
 		memcpy(wf+4,bdw+4*64,(dims0new-4*64)*sizeof(float));
-		memcpy(wfcuda+4,bdw+4*64,(dims0new-4*64)*sizeof(float));
+		memcpy(wfcuda.get()+4,bdw+4*64,(cudaPrescreenerFloatCount-4)*sizeof(float));
+
+    // int16 と float を別々に生成し、CUDA が期待する最終バイト配置へパックする。
+    memcpy(reinterpret_cast<uint8_t*>(wscuda.get()) + 4 * 64 * sizeof(int16_t),
+      wfcuda.get(), cudaPrescreenerFloatCount * sizeof(float));
 
     {
       // アクセスする順番に並び替える
@@ -814,8 +795,9 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 	}
 
   // CUDA用weight1
-  std::unique_ptr<float[]> weight1cuda =
-    std::unique_ptr<float[]>(new float[dims1 * 2]);
+  const size_t weight1PlaneBytes = (size_t)dims1 * sizeof(float);
+  std::unique_ptr<uint8_t[]> weight1cuda =
+    std::unique_ptr<uint8_t[]>(new uint8_t[weight1PlaneBytes * 2]);
 
 	// Adjust prediction weights
 	for (int i=0; i<2; i++)
@@ -907,7 +889,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			}
 
       // CUDA用に並べ替え前のデータを取っておく
-      memcpy(weight1cuda.get() + i * dims1, weights1[i], dims1 * sizeof(float));
+      memcpy(weight1cuda.get() + i * weight1PlaneBytes, weights1[i], weight1PlaneBytes);
 
 			if (usesSIMDWeightLayout(opt) && (bits_per_pixel<=14)) // shuffle weight order for asm
 			{
@@ -1021,26 +1003,30 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
     for (int i = 0; i < 2; ++i) {
       int16_t* dst = tmp.get() + weight1pitch * i;
-      const int16_t* src = reinterpret_cast<const int16_t*>(weight1cuda.get() + dims1 * i);
-      memcpy(dst, src, weight1pitch * sizeof(int16_t));
+      uint8_t* dstBytes = reinterpret_cast<uint8_t*>(dst);
+      const uint8_t* srcBytes = weight1cuda.get() + i * weight1PlaneBytes;
+      memcpy(dstBytes, srcBytes, weight1PlaneBytes);
 
       const int nnst = nnsTable[nns];
       const int nnst2 = nnst << 1;
       const int asize = xdiaTable[nsize] * ydiaTable[nsize];
-
-      float *dwf = reinterpret_cast<float*>(&dst[asize*nnst2]);
-      const float *swf = reinterpret_cast<const float*>(&src[asize*nnst2]);
+      const size_t floatOffset = (size_t)asize * nnst2 * sizeof(int16_t);
 
       // CUDA用に並べ替え
       for (int j = 0; j<nnst2; j++)
       {
         int src_j = (j >> 1) + ((j & 1) ? nnst : 0);
         for (int k = 0; k < asize; k++) {
-          dst[j + k * nnst2] = src[k + src_j * asize];
+          int16_t value;
+          memcpy(&value, srcBytes + ((size_t)k + src_j * asize) * sizeof(value), sizeof(value));
+          dst[j + k * nnst2] = value;
         }
         int off = ((src_j >> 2) << 3) + (src_j & 3);
-        dwf[j] = swf[off];
-        dwf[j + nnst2] = swf[off + 4];
+        float scale, bias;
+        memcpy(&scale, srcBytes + floatOffset + (size_t)off * sizeof(float), sizeof(scale));
+        memcpy(&bias, srcBytes + floatOffset + (size_t)(off + 4) * sizeof(float), sizeof(bias));
+        memcpy(dstBytes + floatOffset + (size_t)j * sizeof(float), &scale, sizeof(scale));
+        memcpy(dstBytes + floatOffset + (size_t)(j + nnst2) * sizeof(float), &bias, sizeof(bias));
       }
     }
 
@@ -1930,7 +1916,7 @@ void computeNetwork0new_C(const float *datai, const float *weights, uint8_t *d)
 		if (vals[4 + i]>0.0f)
 			mask |= (0x1 << (i << 3));
 	}
-	*((int*)d) = mask;
+	std::memcpy(d,&mask,sizeof(mask));
 }
 
 
@@ -2346,7 +2332,7 @@ void computeNetwork0new_C_16(const float *datai, const float *weights, uint8_t *
 		if (vals[4+i]>0.0f)
 			mask |= (0x1 << (i<<3));
 	}
-	*((int*)d) = mask;
+	std::memcpy(d,&mask,sizeof(mask));
 }
 
 #if SSE2_ASM_AVAILABLE
@@ -2897,8 +2883,8 @@ void e0_m16_C(float *s,const int n)
 {
 	for (int i=0; i<n; i++)
 	{
-		const int t = (int)(max(min(s[i],exp_hi[0]),exp_lo[0])*e0_mult[0]+e0_bias[0]);
-		s[i] = (*((float*)&t));
+		const uint32_t bits = (uint32_t)(max(min(s[i],exp_hi[0]),exp_lo[0])*e0_mult[0]+e0_bias[0]);
+		std::memcpy(&s[i],&bits,sizeof(bits));
 	}
 }
 
@@ -2917,11 +2903,13 @@ void e1_m16_C(float *s,const int n)
 	for (int q=0; q<n; q++)
 	{
 		float x = max(min(s[q],exp_hi[0]),exp_lo[0])*e1_scale[0];
-		int i = (int)(x + 128.5f) - 128;
-		x -= i;
+		int exponent = (int)(x + 128.5f) - 128;
+		x -= exponent;
 		x = e1_c0[0] + e1_c1[0]*x + e1_c2[0]*x*x;
-		i = (i+127)<<23;
-		s[q] = x * *((float*)&i);
+		const uint32_t bits = (uint32_t)(exponent+127)<<23;
+		float scale;
+		std::memcpy(&scale,&bits,sizeof(bits));
+		s[q] = x * scale;
 	}
 }
 

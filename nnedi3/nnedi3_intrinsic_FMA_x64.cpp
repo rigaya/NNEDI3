@@ -1,6 +1,8 @@
 #include <immintrin.h>
 #include <stdint.h>
 #include <cmath> // For fabsf, expf, etc. if needed for some fallback logic, though intrinsics are preferred.
+#include <cstring>
+#include "nnedi3_intrinsic.h"
 
 // Intrinsics friendly data definitions
 namespace {
@@ -525,7 +527,8 @@ void computeNetwork0_i16_AVX2(const float* inputf_raw, const float* weightsf_raw
 // datai = rcx
 // weights = rdx
 // ptr_d = r8
-extern "C" void computeNetwork0new_AVX2(const int16_t* datai, const float* weights, uint32_t* ptr_d) {
+extern "C" void computeNetwork0new_AVX2(const float* datai_raw, const float* weights, uint8_t* ptr_d) {
+    const int16_t* datai = reinterpret_cast<const int16_t*>(datai_raw);
     // sub rsp,32
     // .allocstack 32
     // vmovdqu XMMWORD ptr[rsp],xmm6
@@ -675,7 +678,7 @@ extern "C" void computeNetwork0new_AVX2(const int16_t* datai, const float* weigh
     // and eax,001010101h
     eax &= 0x01010101;
     // mov [rcx],eax
-    *ptr_d = eax;
+    std::memcpy(ptr_d, &eax, sizeof(eax));
 
     // vzeroupper
     _mm256_zeroupper();
@@ -1028,7 +1031,8 @@ extern "C" void uc2f48_AVX2_16(const uint8_t* ptr_t, int pitch, float* ptr_p) {
 // ptr_t = rcx
 // pitch = edx
 // ptr_pf = r8
-extern "C" void uc2s48_AVX2(const uint8_t* ptr_t, int pitch, int16_t* ptr_pf) {
+extern "C" void uc2s48_AVX2(const uint8_t* ptr_t, int pitch, float* ptr_pf_raw) {
+    int16_t* ptr_pf = reinterpret_cast<int16_t*>(ptr_pf_raw);
     // sub rsp,32
     // .allocstack 32
     // vmovdqu XMMWORD ptr[rsp],xmm6
@@ -1047,17 +1051,22 @@ extern "C" void uc2s48_AVX2(const uint8_t* ptr_t, int pitch, int16_t* ptr_pf) {
     // vmovq xmm0,QWORD PTR[rax]
     __m128i xmm0 = _mm_loadl_epi64((__m128i*)rax);
     // vmovd xmm1,dword ptr[rax+8]
-    __m128i xmm1 = _mm_cvtsi32_si128(*(int32_t*)(rax + 8));
+    int32_t value;
+    std::memcpy(&value, rax + 8, sizeof(value));
+    __m128i xmm1 = _mm_cvtsi32_si128(value);
     // vmovd xmm2,dword ptr[rax+rcx*2]
-    __m128i xmm2 = _mm_cvtsi32_si128(*(int32_t*)(rax + rcx * 2));
+    std::memcpy(&value, rax + rcx * 2, sizeof(value));
+    __m128i xmm2 = _mm_cvtsi32_si128(value);
     // vmovq xmm3,QWORD PTR[rax+rcx*2+4]
     __m128i xmm3 = _mm_loadl_epi64((__m128i*)(rax + rcx * 2 + 4));
     // vmovq xmm4,QWORD PTR[rdx]
     __m128i xmm4 = _mm_loadl_epi64((__m128i*)rdx);
     // vmovd xmm5,dword ptr[rdx+8]
-    __m128i xmm5 = _mm_cvtsi32_si128(*(int32_t*)(rdx + 8));
+    std::memcpy(&value, rdx + 8, sizeof(value));
+    __m128i xmm5 = _mm_cvtsi32_si128(value);
     // vmovd xmm6,dword ptr[rdx+rcx*2]
-    __m128i xmm6 = _mm_cvtsi32_si128(*(int32_t*)(rdx + rcx * 2));
+    std::memcpy(&value, rdx + rcx * 2, sizeof(value));
+    __m128i xmm6 = _mm_cvtsi32_si128(value);
     // vmovq xmm7,QWORD PTR[rdx+rcx*2+4]
     __m128i xmm7 = _mm_loadl_epi64((__m128i*)(rdx + rcx * 2 + 4));
 
@@ -1102,7 +1111,8 @@ extern "C" void uc2s48_AVX2(const uint8_t* ptr_t, int pitch, int16_t* ptr_pf) {
 // ptr_t = rcx
 // pitch = edx
 // ptr_p = r8
-extern "C" void uc2s64_AVX2(const uint8_t* ptr_t, int pitch, int16_t* ptr_p) {
+extern "C" void uc2s64_AVX2(const uint8_t* ptr_t, int pitch, float* ptr_p_raw) {
+    int16_t* ptr_p = reinterpret_cast<int16_t*>(ptr_p_raw);
     // .endprolog
 
     // mov rax,rcx
@@ -1178,19 +1188,19 @@ extern "C" void uc2s64_AVX2(const uint8_t* ptr_t, int pitch, int16_t* ptr_p) {
 }
 
 extern "C" void dotProd_m32_m16_FMA3(
-    char* data_,    // rcx
-    char* weights,  // rdx
-    char* vals,     // r8
+    const float* data_raw,    // rcx
+    const float* weights_raw, // rdx
+    float* vals_raw,          // r8
     int n,          // r9d
     int len,        // [rbp+48]
-    float* istd     // [rbp+56]
+    const float* istd     // [rbp+56]
 ) {
     // レジスタの初期化
-    char* rdi = weights;
-    char* rax = vals;
+    const char* rdi = reinterpret_cast<const char*>(weights_raw);
+    char* rax = reinterpret_cast<char*>(vals_raw);
     int rbx = n;
     int rsi = len;
-    char* r15 = data_;
+    const char* r15 = reinterpret_cast<const char*>(data_raw);
 
     // 定数の設定
     const int r10 = 4;
@@ -1201,7 +1211,7 @@ extern "C" void dotProd_m32_m16_FMA3(
 
     // nloop_2
     while (rbx != 0) {
-        char* rcx = r15;
+        const char* rcx = r15;
         __m256 ymm0 = _mm256_setzero_ps();
         __m256 ymm1 = _mm256_setzero_ps();
         __m256 ymm2 = _mm256_setzero_ps();
@@ -1291,23 +1301,21 @@ extern "C" void dotProd_m32_m16_FMA3(
     }
 
     // 最終処理
-    char* rcx = (char*)istd;
-    rax = vals;
+    const char* rcx = reinterpret_cast<const char*>(istd);
+    rax = reinterpret_cast<char*>(vals_raw);
     // vmovss xmm7,dword ptr[rcx]
     __m128 xmm7 = _mm_load_ss((float*)rcx);
     int rdx = n;
     // vshufps xmm7,xmm7,xmm7,0
     xmm7 = _mm_shuffle_ps(xmm7, xmm7, 0);
+    const __m256 ymm7_full = _mm256_broadcastss_ps(xmm7);
     int rcx2 = 0;
-    // vinsertf128 ymm7,ymm7,xmm7,1
-    __m256 ymm7 = _mm256_insertf128_ps(_mm256_castps128_ps256(xmm7), xmm7, 1);
-
     // aloop_2
     while (rdx != 0) {
         // vmulps ymm0,ymm7,YMMWORD ptr[rax+rcx*4]
-        __m256 ymm0 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(rax + rcx2*4)));
+        __m256 ymm0 = _mm256_mul_ps(ymm7_full, _mm256_load_ps((float*)(rax + rcx2*4)));
         // vmulps ymm2,ymm7,YMMWORD ptr[rax+rcx*4+32]
-        __m256 ymm2 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(rax + rcx2*4 + 32)));
+        __m256 ymm2 = _mm256_mul_ps(ymm7_full, _mm256_load_ps((float*)(rax + rcx2*4 + 32)));
         // vaddps ymm0,ymm0,YMMWORD ptr[rdi+rcx*4]
         ymm0 = _mm256_add_ps(ymm0, _mm256_load_ps((float*)(rdi + rcx2*4)));
         // vaddps ymm2,ymm2,YMMWORD ptr[rdi+rcx*4+32]
@@ -1333,19 +1341,19 @@ extern "C" void dotProd_m32_m16_FMA3(
 // istd = [rbp+56]
 
 extern "C" void dotProd_m48_m16_FMA3(
-    char* data_,    // rcx
-    char* weights,  // rdx
-    char* vals,     // r8
+    const float* data_raw,    // rcx
+    const float* weights_raw, // rdx
+    float* vals_raw,          // r8
     int n,          // r9d
     int len,        // [rbp+48]
-    float* istd     // [rbp+56]
+    const float* istd     // [rbp+56]
 ) {
     // レジスタの初期化
-    char* rdi = weights;
-    char* rax = vals;
+    const char* rdi = reinterpret_cast<const char*>(weights_raw);
+    char* rax = reinterpret_cast<char*>(vals_raw);
     int rbx = n;
     int rsi = len;
-    char* r15 = data_;
+    const char* r15 = reinterpret_cast<const char*>(data_raw);
 
     // 定数の設定
     const int r10 = 4;
@@ -1356,7 +1364,7 @@ extern "C" void dotProd_m48_m16_FMA3(
 
     // nloop2_2
     while (rbx != 0) {
-        char* rcx = r15;
+        const char* rcx = r15;
         __m256 ymm0 = _mm256_setzero_ps();
         __m256 ymm1 = _mm256_setzero_ps();
         __m256 ymm2 = _mm256_setzero_ps();
@@ -1468,8 +1476,8 @@ extern "C" void dotProd_m48_m16_FMA3(
     }
 
     // 最終処理
-    char* rcx = (char*)istd;
-    rax = vals;
+    const char* rcx = reinterpret_cast<const char*>(istd);
+    rax = reinterpret_cast<char*>(vals_raw);
     // vmovss xmm7,dword ptr[rcx]
     __m128 xmm7 = _mm_load_ss((float*)rcx);
     int rdx = n;
@@ -1477,14 +1485,14 @@ extern "C" void dotProd_m48_m16_FMA3(
     xmm7 = _mm_shuffle_ps(xmm7, xmm7, 0);
     int rcx2 = 0;
     // vinsertf128 ymm7,ymm7,xmm7,1
-    __m256 ymm7 = _mm256_insertf128_ps(_mm256_castps128_ps256(xmm7), xmm7, 1);
+    const __m256 ymm7_full = _mm256_broadcastss_ps(xmm7);
 
     // aloop2_2
     while (rdx != 0) {
         // vmulps ymm0,ymm7,YMMWORD ptr[rax+rcx*4]
-        __m256 ymm0 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(rax + rcx2*4)));
+        __m256 ymm0 = _mm256_mul_ps(ymm7_full, _mm256_load_ps((float*)(rax + rcx2*4)));
         // vmulps ymm2,ymm7,YMMWORD ptr[rax+rcx*4+32]
-        __m256 ymm2 = _mm256_mul_ps(ymm7, _mm256_load_ps((float*)(rax + rcx2*4 + 32)));
+        __m256 ymm2 = _mm256_mul_ps(ymm7_full, _mm256_load_ps((float*)(rax + rcx2*4 + 32)));
         // vaddps ymm0,ymm0,YMMWORD ptr[rdi+rcx*4]
         ymm0 = _mm256_add_ps(ymm0, _mm256_load_ps((float*)(rdi + rcx2*4)));
         // vaddps ymm2,ymm2,YMMWORD ptr[rdi+rcx*4+32]
@@ -1510,19 +1518,19 @@ extern "C" void dotProd_m48_m16_FMA3(
 // istd = [rbp+56]
 
 extern "C" void dotProd_m32_m16_i16_AVX2(
-    char* dataf,    // rcx
-    char* weightsf, // rdx
-    char* vals,     // r8
+    const float* data_raw,    // rcx
+    const float* weights_raw, // rdx
+    float* vals_raw,          // r8
     int n,          // r9d
     int len,        // [rbp+48]
-    float* istd     // [rbp+56]
+    const float* istd     // [rbp+56]
 ) {
     // レジスタの初期化
-    char* rdi = weightsf;
-    char* rax = vals;
+    const char* rdi = reinterpret_cast<const char*>(weights_raw);
+    char* rax = reinterpret_cast<char*>(vals_raw);
     int rbx = n;
     int rsi = len;
-    char* r15 = dataf;
+    const char* r15 = reinterpret_cast<const char*>(data_raw);
 
     // 定数の設定
     const int r10 = 4;
@@ -1533,7 +1541,7 @@ extern "C" void dotProd_m32_m16_i16_AVX2(
 
     // nloop_3
     while (rbx != 0) {
-        char* rcx = r15;
+        const char* rcx = r15;
         __m256i ymm0 = _mm256_setzero_si256();
         __m256i ymm1 = _mm256_setzero_si256();
         __m256i ymm2 = _mm256_setzero_si256();
@@ -1632,8 +1640,8 @@ extern "C" void dotProd_m32_m16_i16_AVX2(
     }
 
     // 最終処理
-    char* rcx = (char*)istd;
-    rax = vals;
+    const char* rcx = reinterpret_cast<const char*>(istd);
+    rax = reinterpret_cast<char*>(vals_raw);
     // vmovss xmm7,dword ptr[rcx]
     __m128 xmm7 = _mm_load_ss((float*)rcx);
     int rdx = n;
@@ -1709,19 +1717,19 @@ extern "C" void dotProd_m32_m16_i16_AVX2(
 // istd = [rbp+56]
 
 extern "C" void dotProd_m48_m16_i16_AVX2(
-    char* dataf,    // rcx
-    char* weightsf, // rdx
-    char* vals,     // r8
+    const float* data_raw,    // rcx
+    const float* weights_raw, // rdx
+    float* vals_raw,          // r8
     int n,          // r9d
     int len,        // [rbp+48]
-    float* istd     // [rbp+56]
+    const float* istd     // [rbp+56]
 ) {
     // レジスタの初期化
-    char* rdi = weightsf;
-    char* rax = vals;
+    const char* rdi = reinterpret_cast<const char*>(weights_raw);
+    char* rax = reinterpret_cast<char*>(vals_raw);
     int rbx = n;
     int rsi = len;
-    char* r15 = dataf;
+    const char* r15 = reinterpret_cast<const char*>(data_raw);
 
     // 定数の設定
     const int r10 = 4;
@@ -1732,7 +1740,7 @@ extern "C" void dotProd_m48_m16_i16_AVX2(
 
     // nloop_4
     while (rbx != 0) {
-        char* rcx = r15;
+        const char* rcx = r15;
         __m256i ymm0 = _mm256_setzero_si256();
         __m256i ymm1 = _mm256_setzero_si256();
         __m256i ymm2 = _mm256_setzero_si256();
@@ -1850,17 +1858,14 @@ extern "C" void dotProd_m48_m16_i16_AVX2(
     }
 
     // 最終処理
-    char* rcx = (char*)istd;
-    rax = vals;
+    const char* rcx = reinterpret_cast<const char*>(istd);
+    rax = reinterpret_cast<char*>(vals_raw);
     // vmovss xmm7,dword ptr[rcx]
     __m128 xmm7 = _mm_load_ss((float*)rcx);
     int rdx = n;
     // vpshufd xmm7,xmm7,0
     xmm7 = _mm_shuffle_ps(xmm7, xmm7, 0);
     int rcx2 = 0;
-    // vinsertf128 ymm7,ymm7,xmm7,1
-    __m256 ymm7 = _mm256_insertf128_ps(_mm256_castps128_ps256(xmm7), xmm7, 1);
-
     // aloop_4
     while (rdx != 0) {
         // vmovdqa ymm0,YMMWORD ptr[rax+rcx*4]
@@ -1925,11 +1930,11 @@ extern "C" void dotProd_m48_m16_i16_AVX2(
 // n = edx
 
 extern "C" void e0_m16_FMA3(
-    char* ptr_s,    // rcx
+    float* ptr_s,   // rcx
     int n           // edx
 ) {
     // レジスタの初期化
-    char* rax = ptr_s;
+    char* rax = reinterpret_cast<char*>(ptr_s);
     int rcx = n;
 
     // 定数の設定
@@ -1990,11 +1995,11 @@ extern "C" void e0_m16_FMA3(
 // n = edx
 
 extern "C" void e1_m16_AVX2(
-    char* ptr_s,    // rcx
+    float* ptr_s,   // rcx
     int n           // edx
 ) {
     // レジスタの初期化
-    char* rax = ptr_s;
+    char* rax = reinterpret_cast<char*>(ptr_s);
     int rcx = n;
 
     // 定数の設定
@@ -2065,11 +2070,11 @@ extern "C" void e1_m16_AVX2(
 // n = edx
 
 extern "C" void e2_m16_AVX2(
-    char* ptr_s,    // rcx
+    float* ptr_s,   // rcx
     int n           // edx
 ) {
     // レジスタの初期化
-    char* rax = ptr_s;
+    char* rax = reinterpret_cast<char*>(ptr_s);
     int rcx = n;
 
     // 定数の設定
@@ -2192,24 +2197,24 @@ extern "C" void e2_m16_AVX2(
 // val_min_max = [rbp+56]
 
 extern "C" int processLine0_AVX2_ASM(
-    char* tempu,        // rcx
+    const uint8_t* tempu, // rcx
     int width_,         // edx
-    char* dstp,         // r8
-    char* src3p,        // r9
+    uint8_t* dstp,      // r8
+    const uint8_t* src3p, // r9
     int src_pitch,      // [rbp+48]
-    char* val_min_max   // [rbp+56]
+    const uint16_t* val_min_max // [rbp+56]
 ) {
     // レジスタの初期化
-    char* rax = tempu;
-    char* rbx = src3p;
+    const char* rax = reinterpret_cast<const char*>(tempu);
+    const char* rbx = reinterpret_cast<const char*>(src3p);
     int rcx = width_;
     int rdx = src_pitch;
-    char* rsi = dstp;
+    char* rsi = reinterpret_cast<char*>(dstp);
     const int r8 = 32;
-    char* r10 = val_min_max;
+    const char* r10 = reinterpret_cast<const char*>(val_min_max);
 
     // ポインタの計算
-    char* rdi = rbx + rdx * 4;
+    const char* rdi = rbx + rdx * 4;
 
     // 定数のロード
     // vmovdqa ymm8,YMMWORD ptr w_19
@@ -2340,25 +2345,25 @@ extern "C" int processLine0_AVX2_ASM(
 // val_min_max = [rbp+56]
 
 extern "C" int processLine0_AVX2_ASM_16(
-    char* tempu,        // rcx
+    const uint8_t* tempu, // rcx
     int width_,         // edx
-    char* dstp,         // r8
-    char* src3p,        // r9
+    uint8_t* dstp,      // r8
+    const uint8_t* src3p, // r9
     int src_pitch,      // [rbp+48]
-    char* val_min_max   // [rbp+56]
+    const uint16_t* val_min_max // [rbp+56]
 ) {
     // レジスタの初期化
-    char* rax = tempu;
-    char* rbx = src3p;
+    const char* rax = reinterpret_cast<const char*>(tempu);
+    const char* rbx = reinterpret_cast<const char*>(src3p);
     int rcx = width_;
     int rdx = src_pitch;
-    char* rsi = dstp;
+    char* rsi = reinterpret_cast<char*>(dstp);
     const int r8 = 32;
     const int r9 = 16;
-    char* r10 = val_min_max;
+    const char* r10 = reinterpret_cast<const char*>(val_min_max);
 
     // ポインタの計算
-    char* rdi = rbx + rdx * 4;
+    const char* rdi = rbx + rdx * 4;
 
     // 定数のロード
     // vmovdqa ymm8,YMMWORD ptr d_19
@@ -2480,23 +2485,23 @@ extern "C" int processLine0_AVX2_ASM_16(
 // src_pitch = [rbp+48]
 
 extern "C" int processLine0_AVX2_ASM_32(
-    char* tempu,        // rcx
+    const uint8_t* tempu, // rcx
     int width_,         // edx
-    char* dstp,         // r8
-    char* src3p,        // r9
+    uint8_t* dstp,      // r8
+    const uint8_t* src3p, // r9
     int src_pitch       // [rbp+48]
 ) {
     // レジスタの初期化
-    char* rax = tempu;
-    char* rbx = src3p;
+    const char* rax = reinterpret_cast<const char*>(tempu);
+    const char* rbx = reinterpret_cast<const char*>(src3p);
     int rcx = width_;
     int rdx = src_pitch;
-    char* rsi = dstp;
+    char* rsi = reinterpret_cast<char*>(dstp);
     const int r8 = 32;
     const int r9 = 8;
 
     // ポインタの計算
-    char* rdi = rbx + rdx * 4;
+    const char* rdi = rbx + rdx * 4;
 
     // レジスタの初期化
     // vpxor ymm5,ymm5,ymm5
@@ -2572,12 +2577,12 @@ extern "C" int processLine0_AVX2_ASM_32(
 // mstd = r8
 
 extern "C" void weightedAvgElliottMul5_m16_FMA3(
-    char* ptr_w,    // rcx
+    const float* ptr_w, // rcx
     int n,          // edx
-    char* mstd      // r8
+    float* mstd     // r8
 ) {
     // レジスタの初期化
-    char* rax = ptr_w;
+    const char* rax = reinterpret_cast<const char*>(ptr_w);
     int rcx = n;
     const int r9 = 16;
 
@@ -2588,7 +2593,7 @@ extern "C" void weightedAvgElliottMul5_m16_FMA3(
     __m256 ymm7 = _mm256_load_ps((float*)&ones_f_32);
 
     // ポインタの計算
-    char* rdx = rax + rcx * 4;
+    const char* rdx = rax + rcx * 4;
     int rdi = 0;
 
     // レジスタの初期化
@@ -2679,13 +2684,13 @@ extern "C" void weightedAvgElliottMul5_m16_FMA3(
 
     // finish_52:
     // vmulss xmm1,xmm1,dword ptr[r8+4]
-    xmm1 = _mm_mul_ss(xmm1, _mm_load_ss((float*)(mstd + 4)));
+    xmm1 = _mm_mul_ss(xmm1, _mm_load_ss(mstd + 1));
     // vaddss xmm1,xmm1,dword ptr[r8]
-    xmm1 = _mm_add_ss(xmm1, _mm_load_ss((float*)mstd));
+    xmm1 = _mm_add_ss(xmm1, _mm_load_ss(mstd));
     // vaddss xmm1,xmm1,dword ptr[r8+12]
-    xmm1 = _mm_add_ss(xmm1, _mm_load_ss((float*)(mstd + 12)));
+    xmm1 = _mm_add_ss(xmm1, _mm_load_ss(mstd + 3));
     // vmovss dword ptr[r8+12],xmm1
-    _mm_store_ss((float*)(mstd + 12), xmm1);
+    _mm_store_ss(mstd + 3, xmm1);
 }
 
 // 元のアセンブラ関数の引数:
@@ -2698,25 +2703,25 @@ extern "C" void weightedAvgElliottMul5_m16_FMA3(
 // input = [rbp+56]
 
 extern "C" void extract_m8_FMA3(
-    char* srcp,     // rcx
+    const uint8_t* srcp, // rcx
     int stride,     // edx
     int xdia,       // r8d
     int ydia,       // r9d
-    char* mstd,     // [rbp+48]
-    char* input     // [rbp+56]
+    float* mstd,    // [rbp+48]
+    float* input    // [rbp+56]
 ) {
     // レジスタの初期化
-    char* rax = srcp;
+    const char* rax = reinterpret_cast<const char*>(srcp);
     int rbx = stride;
     int rdi = xdia;
-    char* rsi = input;
+    char* rsi = reinterpret_cast<char*>(input);
     int r8 = ydia;
     const int r10 = 2;
     const int r11 = 8;
     const int r12 = 32;
 
     // ポインタの計算
-    char* rdx = rax + rbx * 2;
+    const char* rdx = rax + rbx * 2;
 
     // レジスタの初期化
     // vpxor ymm5,ymm5,ymm5
@@ -2792,7 +2797,7 @@ extern "C" void extract_m8_FMA3(
     // vmovhlps xmm0,xmm0,xmm5
     xmm0 = _mm_movehl_ps(xmm0, xmm5);
     // vmovhlps xmm1,xmm1,xmm6
-    __m128 xmm1 = _mm_movehl_ps(xmm1, xmm6);
+    __m128 xmm1 = _mm_movehl_ps(xmm6, xmm6);
     // mul edi
     eax *= rdi;
     // vaddps xmm5,xmm5,xmm0
@@ -2800,7 +2805,7 @@ extern "C" void extract_m8_FMA3(
     // vaddps xmm6,xmm6,xmm1
     xmm6 = _mm_add_ps(xmm6, xmm1);
     // vcvtsi2ss xmm7,xmm7,eax
-    __m128 xmm7 = _mm_cvtsi32_ss(xmm7, eax);
+    __m128 xmm7 = _mm_cvtsi32_ss(_mm_setzero_ps(), eax);
     // vpshuflw xmm0,xmm5,14
     xmm0 = _mm_castsi128_ps(_mm_shufflelo_epi16(_mm_castps_si128(xmm5), 14));
     // vpshuflw xmm1,xmm6,14
@@ -2812,7 +2817,7 @@ extern "C" void extract_m8_FMA3(
     // vaddss xmm6,xmm6,xmm1
     xmm6 = _mm_add_ss(xmm6, xmm1);
     // mov rax,mstd
-    char* rax_ptr = mstd;
+    char* rax_ptr = reinterpret_cast<char*>(mstd);
     // vmulss xmm5,xmm5,xmm7
     xmm5 = _mm_mul_ss(xmm5, xmm7);
     // vmulss xmm6,xmm6,xmm7
@@ -2858,18 +2863,18 @@ extern "C" void extract_m8_FMA3(
 // mstd  = [rbp+48]
 // inputf= [rbp+56]
 extern "C" void extract_m8_i16_AVX2(
-    char* srcp,     // rcx
+    const uint8_t* srcp, // rcx
     int stride,     // edx
     int xdia,       // r8d
     int ydia,       // r9d
-    char* mstd,     // [rbp+48]
-    char* inputf    // [rbp+56]
+    float* mstd,    // [rbp+48]
+    float* inputf   // [rbp+56]
 ) {
     // レジスタ変数の定義
-    char* rax_ptr = srcp;
+    const char* rax_ptr = reinterpret_cast<const char*>(srcp);
     int rbx = stride;
     int rdi = xdia;
-    char* rdx_ptr = inputf;
+    char* rdx_ptr = reinterpret_cast<char*>(inputf);
     int r8 = ydia;
     int r10 = 2;
     int r11 = 16;
@@ -3047,21 +3052,21 @@ extern "C" void extract_m8_i16_AVX2(
 
     if (_mm_comile_ss(xmm5, _mm_load_ss((float*)&flt_epsilon_sse))) {
         // novarjmp_2
-        _mm_store_ss((float*)(mstd + 4), _mm256_castps256_ps128(_mm256_castsi256_ps(ymm6)));
-        _mm_store_ss((float*)(mstd + 8), _mm256_castps256_ps128(_mm256_castsi256_ps(ymm6)));
+        _mm_store_ss(mstd + 1, _mm256_castps256_ps128(_mm256_castsi256_ps(ymm6)));
+        _mm_store_ss(mstd + 2, _mm256_castps256_ps128(_mm256_castsi256_ps(ymm6)));
     } else {
         // vrsqrtss xmm5,xmm5,xmm5
         xmm5 = _mm_rsqrt_ss(xmm5);
         // vrcpss xmm4,xmm4,xmm5
         xmm4 = _mm_rcp_ss(xmm5);
         // vmovss dword ptr[rax+4],xmm4
-        _mm_store_ss((float*)(mstd + 4), xmm4);
+        _mm_store_ss(mstd + 1, xmm4);
         // vmovss dword ptr[rax+8],xmm5
-        _mm_store_ss((float*)(mstd + 8), xmm5);
+        _mm_store_ss(mstd + 2, xmm5);
     }
 
     // finish_4
-    _mm_store_ss((float*)(mstd + 12), _mm256_castps256_ps128(_mm256_castsi256_ps(ymm6)));
+    _mm_store_ss(mstd + 3, _mm256_castps256_ps128(_mm256_castsi256_ps(ymm6)));
 
     _mm256_zeroupper();
 }

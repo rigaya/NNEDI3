@@ -467,6 +467,7 @@
     <ClInclude Include="internal.h" />
     <ClInclude Include="knnedi_version.h" />
     <ClInclude Include="nnedi3.h" />
+    <ClInclude Include="nnedi3_intrinsic.h" />
     <ClInclude Include="nnedi3_kernel.h" />
     <ClInclude Include="PlanarFrame.h" />
     <ClInclude Include="resource.h" />
