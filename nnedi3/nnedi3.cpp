@@ -20,9 +20,18 @@
 **   Modified by JPSDR
 */
 
-#include "./nnedi3.h"
+#include "nnedi3.h"
+#include "nnedi3_backend.h"
 #include "nnedi3_intrinsic.h"
+#include "nnedi3_intrinsic_AVX512.h"
+#include "nnedi3_intrinsic_AVX512_extract.h"
+#include "nnedi3_intrinsic_AVX512_prescreener.h"
+#include "nnedi3_intrinsic_AVX512_process.h"
+#include <stdint.h>
+#include <cmath>
 #include <cstring>
+#include <limits>
+#include <string>
 
 #if defined(_WIN32) || defined(_WIN64)
 #define ENABLE_SSE2 1
@@ -33,6 +42,10 @@
 #define ENABLE_AVX 0
 #define ENABLE_AVX2 1
 #endif
+
+#define SSE2_ASM_AVAILABLE ENABLE_SSE2
+#define AVX_ASM_AVAILABLE ENABLE_AVX
+#define AVX2_ASM_AVAILABLE ENABLE_AVX2
 
 #if !(defined(_WIN32) || defined(_WIN64))
 #define computeNetwork0_AVX2 computeNetwork0_FMA3
@@ -222,40 +235,88 @@ extern char _binary____nnedi3_binary1_bin_end[];
 
 static ThreadPoolInterface *poolInterface;
 
-static constexpr bool usesSIMDWeightLayout(const int opt)
-{
-	return opt > 1;
-}
+using nnedi3_backend::BackendSelection;
+using nnedi3_backend::KernelSet;
+using nnedi3_backend::Platform;
+using nnedi3_backend::PredictorDot;
+using nnedi3_backend::PredictorPlan;
+using nnedi3_backend::SelectionError;
+using nnedi3_backend::WeightLayout;
 
-static constexpr bool usesAVX2WeightLayout(const int opt)
-{
-	return opt >= 5;
-}
-
-static constexpr bool usesAVX2NewPrescreenerWeightLayout(const int opt, const int bitsPerPixel)
-{
-	return usesAVX2WeightLayout(opt) && bitsPerPixel <= 14;
-}
+static_assert(nnedi3_backend::CPU_SSE2 == CPUF_SSE2, "CPUF_SSE2 mismatch");
+static_assert(nnedi3_backend::CPU_SSE41 == CPUF_SSE4_1, "CPUF_SSE4_1 mismatch");
+static_assert(nnedi3_backend::CPU_AVX == CPUF_AVX, "CPUF_AVX mismatch");
+static_assert(nnedi3_backend::CPU_AVX2 == CPUF_AVX2, "CPUF_AVX2 mismatch");
+static_assert(nnedi3_backend::CPU_FMA3 == CPUF_FMA3, "CPUF_FMA3 mismatch");
+static_assert(nnedi3_backend::CPU_FMA4 == CPUF_FMA4, "CPUF_FMA4 mismatch");
+static_assert(nnedi3_backend::CPU_AVX512F == CPUF_AVX512F, "CPUF_AVX512F mismatch");
+static_assert(nnedi3_backend::CPU_AVX512DQ == CPUF_AVX512DQ, "CPUF_AVX512DQ mismatch");
+static_assert(nnedi3_backend::CPU_AVX512BW == CPUF_AVX512BW, "CPUF_AVX512BW mismatch");
+static_assert(nnedi3_backend::CPU_AVX512VL == CPUF_AVX512VL, "CPUF_AVX512VL mismatch");
 
 #if !(defined(_WIN32) || defined(_WIN64))
-static constexpr int normalizeLinuxOpt(const int requestedOpt, const int cpuFlags)
-{
-	const bool hasAVX2FMA3 = (cpuFlags & CPUF_AVX2) != 0 && (cpuFlags & CPUF_FMA3) != 0;
+// Linux ‚Å‚Í C ‚Æ AVX2+FMA3 ‚Ì‘g‚Ý‡‚í‚¹‚¾‚¯‚ðŒöŠJ‚·‚éB
+static_assert(nnedi3_backend::select_linux_backend(0, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 6, "Linux ‚ÌŽ©“®‘I‘ð‚Å AVX2+FMA3 ‚ð‘I‚×‚Ü‚¹‚ñ");
+static_assert(nnedi3_backend::select_linux_backend(0, CPUF_AVX2).normalized_opt == 1, "Linux ‚Å FMA3 ‚È‚µ‚Ì AVX2 ‚ð‘I‘ð‚µ‚Ä‚¢‚Ü‚·");
+static_assert(nnedi3_backend::select_linux_backend(4, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 1, "Linux ‚Ì opt=2,3,4 ‚Í C ‚Ö³‹K‰»‚·‚é•K—v‚ª‚ ‚è‚Ü‚·");
+static_assert(nnedi3_backend::select_linux_backend(5, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 6, "Linux ‚Ì opt=5 ‚Í AVX2+FMA3 ‚Ö³‹K‰»‚·‚é•K—v‚ª‚ ‚è‚Ü‚·");
+static_assert(nnedi3_backend::select_linux_backend(7, CPUF_FMA3).normalized_opt == 1, "Linux ‚Å AVX2 ‚È‚µ‚Ì FMA3 ‚ð‘I‘ð‚µ‚Ä‚¢‚Ü‚·");
+static_assert(!nnedi3_backend::uses_simd_layout(nnedi3_backend::kernel_set_from_opt(1).predictor_weights), "C ”Å‚É‚Í neuron-major ‚Ìd‚Ý‚ª•K—v‚Å‚·");
+static_assert(nnedi3_backend::uses_avx2_layout(nnedi3_backend::kernel_set_from_opt(6).predictor_weights), "AVX2+FMA3 ”Å‚É‚Í AVX2 ”z—ñ‚Ìd‚Ý‚ª•K—v‚Å‚·");
+#endif
 
-	if (requestedOpt == 0 || requestedOpt >= 5)
-		return hasAVX2FMA3 ? 6 : 1;
-	return 1;
+static constexpr Platform currentPlatform()
+{
+#if defined(_WIN32) || defined(_WIN64)
+	return Platform::Windows;
+#else
+	return Platform::Linux;
+#endif
 }
 
-static_assert(normalizeLinuxOpt(0, CPUF_AVX2 | CPUF_FMA3) == 6, "Linux auto selection must choose AVX2+FMA3");
-static_assert(normalizeLinuxOpt(0, CPUF_AVX2) == 1, "Linux must not choose AVX2 without FMA3");
-static_assert(normalizeLinuxOpt(4, CPUF_AVX2 | CPUF_FMA3) == 1, "Linux opt=2,3,4 must use C");
-static_assert(normalizeLinuxOpt(5, CPUF_AVX2 | CPUF_FMA3) == 6, "Linux opt=5 must normalize to AVX2+FMA3");
-static_assert(normalizeLinuxOpt(7, CPUF_FMA3) == 1, "Linux must not choose FMA3 without AVX2");
-static_assert(!usesSIMDWeightLayout(normalizeLinuxOpt(3, CPUF_AVX2 | CPUF_FMA3)), "C requires neuron-major weights");
-static_assert(usesAVX2WeightLayout(normalizeLinuxOpt(6, CPUF_AVX2 | CPUF_FMA3)), "AVX2+FMA3 requires AVX2 weight layout");
-static_assert(!usesAVX2NewPrescreenerWeightLayout(normalizeLinuxOpt(6, CPUF_AVX2 | CPUF_FMA3), 15), "15/16-bit C prescreener requires C weight layout");
+static constexpr KernelSet getKernelSet(const int opt)
+{
+	return nnedi3_backend::kernel_set_from_opt(opt);
+}
+
+static std::string missingFeatureNames(const int missing)
+{
+	std::string result;
+	const auto add = [&result](const char *name) {
+		if (!result.empty()) result += ", ";
+		result += name;
+	};
+	if ((missing & nnedi3_backend::CPU_AVX2) != 0) add("AVX2");
+	if ((missing & nnedi3_backend::CPU_FMA3) != 0) add("FMA3");
+	if ((missing & nnedi3_backend::CPU_AVX512F) != 0) add("AVX512F");
+	if ((missing & nnedi3_backend::CPU_AVX512BW) != 0) add("AVX512BW");
+	if ((missing & nnedi3_backend::CPU_AVX512DQ) != 0) add("AVX512DQ");
+	if ((missing & nnedi3_backend::CPU_AVX512VL) != 0) add("AVX512VL");
+	return result;
+}
+
+static int selectRequestedOpt(const int requestedOpt, const int cpuFlags,
+	IScriptEnvironment *env, const char *filterName)
+{
+#if defined(_WIN32) && !defined(_WIN64)
+	if (requestedOpt == 8)
+		env->ThrowError("%s: opt=8 is not supported by the Win32 build; use x64!", filterName);
 #endif
+	const BackendSelection selection = nnedi3_backend::select_backend(currentPlatform(), requestedOpt, cpuFlags);
+	if (selection.error == SelectionError::InvalidOpt)
+		env->ThrowError("%s: opt must be in [0,8]!", filterName);
+	if (selection.error == SelectionError::MissingFeatures)
+	{
+		const std::string missing = missingFeatureNames(selection.missing_features);
+		if (requestedOpt == 8)
+			env->ThrowError("%s: opt=8 requires AVX2, FMA3, AVX512F, AVX512BW, AVX512DQ and AVX512VL; missing: %s",
+				filterName, missing.c_str());
+		else
+			env->ThrowError("%s: opt=%d requires AVX2 and FMA3; missing: %s",
+				filterName, requestedOpt, missing.c_str());
+	}
+	return selection.normalized_opt;
+}
 
 int roundds(const double f)
 {
@@ -324,10 +385,10 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 		if (threads>1) poolInterface->DeAllocateAllThreads(true);
 		env->ThrowError("nnedi3: qual must be set to 1 or 2!\n");
 	}
-	if ((opt<0) || (opt>7))
+	if ((opt<0) || (opt>8))
 	{
 		if (threads>1) poolInterface->DeAllocateAllThreads(true);
-		env->ThrowError("nnedi3: opt must be in [0,7]!");
+		env->ThrowError("nnedi3: opt must be in [0,8]!");
 	}
 	if ((fapprox<0) || (fapprox>15))
 	{
@@ -349,6 +410,9 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 		if (threads>1) poolInterface->DeAllocateAllThreads(true);
 		env->ThrowError("nnedi3: range must be [0,4]!\n");
 	}
+
+	opt = selectRequestedOpt(opt, env->GetCPUFlags(), env, "nnedi3");
+	const KernelSet kernelSet = getKernelSet(opt);
 	
 	grey = vi.IsY();
 	isRGBPfamily = vi.IsPlanarRGB() || vi.IsPlanarRGBA();
@@ -362,6 +426,8 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 	int16_predictor = ((fapprox & 2)!=0) && (bits_per_pixel<=15);
 	int16_prescreener = ((fapprox & 1)!=0) && (pixelsize<=2);
+	const PredictorPlan predictorPlan = nnedi3_backend::make_predictor_plan(
+		kernelSet, int16_predictor, bits_per_pixel);
 	
 	const int PlaneMax=(grey) ? 1:(isAlphaChannel) ? 4:3;
 
@@ -519,38 +585,11 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 		if (threads>1) poolInterface->DeAllocateAllThreads(true);
 		env->ThrowError("nnedi3: Error while allocating planar dstPF!");
 	}
+	const bool useAVX512PixelConversion =
+		kernelSet.requested_backend == nnedi3_backend::Backend::AVX512;
+	srcPF->setAVX512(useAVX512PixelConversion);
+	dstPF->setAVX512(useAVX512PixelConversion);
 
-#if defined(_WIN32) || defined(_WIN64)
-	if (opt==0)
-	{
-		const int CPUF=env->GetCPUFlags();
-
-		if (((CPUF & CPUF_FMA3)!=0) && ((CPUF & CPUF_AVX2)!=0)) opt=6;
-		else
-		{
-			if ((CPUF & CPUF_AVX2)!=0) opt=5;
-			else
-			{
-				if ((CPUF & CPUF_AVX)!= 0) opt = 4;
-				else
-				{
-					if ((CPUF & CPUF_SSE4_1)!=0) opt=3;
-					else
-					{
-						if ((CPUF & CPUF_SSE2)!=0) opt=2;
-						else opt=1;
-					}
-				}
-			}
-		}
-
-		char buf[512];
-		sprintf_s(buf,512,"nnedi3: auto-detected opt setting = %d (%d)\n",opt,CPUF);
-		OutputDebugString(buf);
-	}
-#else
-	opt=normalizeLinuxOpt(opt,env->GetCPUFlags());
-#endif
 
 	const int dims0 = 49*4+5*4+9*4;
 	const int dims0new = 4*65+4*5;
@@ -638,7 +677,20 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 
 		j_a=0,j_b=0;
-		if (usesAVX2NewPrescreenerWeightLayout(opt,bits_per_pixel))
+		if (nnedi3_backend::uses_avx512_prescreener_layout(
+			kernelSet.prescreener_weights) && bits_per_pixel <= 14)
+		{
+			for (int j=0; j<4; j++)
+			{
+				for (int k=0; k<64; k++)
+					offt2[j_a+k] = ((k>>5)<<7)+j_b+(k&31);
+
+				j_a+=64;
+				j_b+=32;
+			}
+		}
+		else if (nnedi3_backend::uses_avx2_layout(
+			kernelSet.prescreener_weights) && bits_per_pixel <= 14)
 		{
 			for (int j=0; j<4; j++)
 			{
@@ -746,7 +798,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			}
 			memcpy(wf+4,bdata+4*48,(dims0-4*48)*sizeof(float));
 
-			if (usesSIMDWeightLayout(opt) && (bits_per_pixel<=14))// shuffle weight order for asm
+			if (nnedi3_backend::uses_simd_layout(kernelSet.prescreener_weights) && (bits_per_pixel<=14))// shuffle weight order for asm
 			{
 				int16_t *rs = (int16_t*)malloc(dims0*sizeof(float));
 
@@ -760,7 +812,17 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 				memcpy(rs,weights0,dims0*sizeof(float));
 				j_a=0;
-				if (usesAVX2WeightLayout(opt))
+				if (nnedi3_backend::uses_avx512_prescreener_layout(
+					kernelSet.prescreener_weights))
+				{
+					for (int j=0; j<4; j++)
+					{
+						for (int k=0; k<48; k++)
+							ws[k<32 ? j*32+k : 128+j*16+(k-32)] = rs[j_a+k];
+						j_a+=48;
+					}
+				}
+				else if (nnedi3_backend::uses_avx2_layout(kernelSet.prescreener_weights))
 				{
 					for (int j=0; j<4; j++)
 					{
@@ -786,9 +848,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 		}
 		else // use float dot products in first layer
 		{
-			double half = ((int)1 << bits_per_pixel)-1;
-
-			if (pixelsize==4) half = 1.0;
+			double half = pixelsize == 4 ? 1.0 : ((int)1 << bits_per_pixel)-1;
 			half /= 2.0;
 
 			// Factor mean removal and 1.0/half scaling
@@ -802,7 +862,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			}
 			memcpy(weights0+4*48,bdata+4*48,(dims0-4*48)*sizeof(float));
 
-			if (usesSIMDWeightLayout(opt)) // shuffle weight order for asm
+			if (nnedi3_backend::uses_simd_layout(kernelSet.prescreener_weights)) // shuffle weight order for asm
 			{
 				float *wf = weights0;
 				float *rf = (float*)malloc(dims0*sizeof(float));
@@ -816,7 +876,18 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 				memcpy(rf,weights0,dims0*sizeof(float));
 				j_a=0;
-				if (usesAVX2WeightLayout(opt))
+				if (nnedi3_backend::uses_avx512_prescreener_layout(
+					kernelSet.prescreener_weights))
+				{
+					for (int j=0; j<4; j++)
+					{
+						for (int k=0; k<48; k++)
+							wf[((k >> 4) << 6)+j_b+(k&15)] = rf[j_a+k];
+						j_a+=48;
+						j_b+=16;
+					}
+				}
+				else if (nnedi3_backend::uses_avx2_layout(kernelSet.prescreener_weights))
 				{
 					for (int j=0; j<4; j++)
 					{
@@ -931,7 +1002,9 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 				j_d++;
 			}
 
-			if (usesSIMDWeightLayout(opt) && (bits_per_pixel<=14)) // shuffle weight order for asm
+      // CUDA—p‚É•À‚×‘Ö‚¦‘O‚Ìƒf[ƒ^‚ðŽæ‚Á‚Ä‚¨‚­
+
+			if (nnedi3_backend::uses_simd_layout(predictorPlan.layout)) // shuffle weight order for asm
 			{
 				int16_t *rs = (int16_t *)malloc(nnst2*asize*sizeof(int16_t));
 				if (rs==NULL)
@@ -944,29 +1017,15 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 				memcpy(rs,ws,nnst2*asize*sizeof(int16_t));
 				j_a=0;
-				if (usesAVX2WeightLayout(opt))
+				for (int j=0; j<nnst2; j++)
 				{
-					for (int j=0; j<nnst2; j++)
+					for (int k=0; k<asize; k++)
 					{
-						int j_b=((j >> 2) << 2)*asize;
-						int j_c=(j&3) << 4;
-
-						for (int k=0; k<asize; k++)
-							ws[j_b+((k >> 4) << 6)+j_c+(k&15)] = rs[j_a+k];
-						j_a+=asize;
+						const size_t index = nnedi3_backend::predictor_matrix_index(
+							predictorPlan.layout, true, j, k, asize);
+						ws[index] = rs[j_a+k];
 					}
-				}
-				else
-				{
-					for (int j=0; j<nnst2; j++)
-					{
-						int j_b=((j >> 2) << 2)*asize;
-						int j_c=(j&3) << 3;
-
-						for (int k=0; k<asize; k++)
-							ws[j_b+((k >> 3) << 5)+j_c+(k&7)] = rs[j_a+k];
-						j_a+=asize;
-					}
+					j_a+=asize;
 				}
 				free(rs);
 			}
@@ -978,41 +1037,20 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			j_a=0;
 			j_d=asize+1;
 
-			if (usesSIMDWeightLayout(opt)) // shuffle weight order for asm
+			if (nnedi3_backend::uses_simd_layout(predictorPlan.layout)) // shuffle weight order for asm
 			{
-				if (usesAVX2WeightLayout(opt))
+				for (int j=0; j<nnst2; j++)
 				{
-					for (int j=0; j<nnst2; j++)
+					for (int k=0; k<asize; k++)
 					{
-						for (int k=0; k<asize; k++)
-						{
-							const double q = j < nnst ? mean[k] : 0.0;
-							int j_b=((j >> 2) << 2)*asize;
-							int j_c=(j&3) << 3;
-
-							weights1[i][j_b+((k >> 3) << 5)+j_c+(k&7)]=(float)(bdataT[j_a+k]-mean[j_d]-q);
-						}
-						weights1[i][boff+j] = (float)(bdataT[boff+j]-(j<nnst?mean[asize]:0.0));
-						j_a+=asize;
-						j_d++;
+						const double q = j < nnst ? mean[k] : 0.0;
+						const size_t index = nnedi3_backend::predictor_matrix_index(
+							predictorPlan.layout, false, j, k, asize);
+						weights1[i][index]=(float)(bdataT[j_a+k]-mean[j_d]-q);
 					}
-				}
-				else
-				{
-					for (int j=0; j<nnst2; j++)
-					{
-						for (int k=0; k<asize; k++)
-						{
-							const double q = j < nnst ? mean[k] : 0.0;
-							int j_b=((j >> 2) << 2)*asize;
-							int j_c=(j&3) << 2;
-
-							weights1[i][j_b+((k >> 2) << 4)+j_c+(k&3)]=(float)(bdataT[j_a+k]-mean[j_d]-q);
-						}
-						weights1[i][boff+j] = (float)(bdataT[boff+j]-(j<nnst?mean[asize]:0.0));
-						j_a+=asize;
-						j_d++;
-					}
+					weights1[i][boff+j] = (float)(bdataT[boff+j]-(j<nnst?mean[asize]:0.0));
+					j_a+=asize;
+					j_d++;
 				}
 			}
 			else
@@ -1401,11 +1439,15 @@ void nnedi3::copyPad(PVideoFrame &src, int fn, IScriptEnvironment *env)
 			{
 				if (vi.IsRGB24())
 				{
+					const int64_t doubledPitch = -static_cast<int64_t>(src->GetPitch()) * 2;
+					if (doubledPitch < std::numeric_limits<int>::min()
+						|| doubledPitch > std::numeric_limits<int>::max())
+						env->ThrowError("nnedi3: RGB24 pitch is too large!");
 					srcPF->convRGB24to444(src->GetReadPtr()+(vi.height-1-off)*src->GetPitch(),
 						srcPF->GetPtr(0)+(srcPF->GetPitch(0)*(6+off)+32),
 						srcPF->GetPtr(1)+(srcPF->GetPitch(1)*(6+off)+32),
 						srcPF->GetPtr(2)+(srcPF->GetPitch(2)*(6+off)+32),
-						-src->GetPitch() << 1,srcPF->GetPitch(0) << 1,srcPF->GetPitch(1) << 1,
+						static_cast<int>(doubledPitch),srcPF->GetPitch(0) << 1,srcPF->GetPitch(1) << 1,
 						vi.width,vi.height>>1);
 				}
 			}
@@ -1436,11 +1478,15 @@ void nnedi3::copyPad(PVideoFrame &src, int fn, IScriptEnvironment *env)
 			{
 				if (vi.IsRGB24())
 				{
+					const int64_t reversedPitch = -static_cast<int64_t>(src->GetPitch());
+					if (reversedPitch < std::numeric_limits<int>::min()
+						|| reversedPitch > std::numeric_limits<int>::max())
+						env->ThrowError("nnedi3: RGB24 pitch is too large!");
 					srcPF->convRGB24to444(src->GetReadPtr()+((vi.height>>1)-1)*src->GetPitch(),
 						srcPF->GetPtr(0)+(srcPF->GetPitch(0)*(6+off)+32),
 						srcPF->GetPtr(1)+(srcPF->GetPitch(1)*(6+off)+32),
 						srcPF->GetPtr(2)+(srcPF->GetPitch(2)*(6+off)+32),
-						-src->GetPitch(),srcPF->GetPitch(0) << 1,srcPF->GetPitch(1) << 1,
+						static_cast<int>(reversedPitch),srcPF->GetPitch(0) << 1,srcPF->GetPitch(1) << 1,
 						vi.width,vi.height>>1);
 				}
 			}
@@ -1628,11 +1674,15 @@ void dotProdS_C(const float *dataf, const float *weightsf, float *vals, const in
 
 	for (int i=0; i<n; i++)
 	{
-		int sum = 0, off = ((i>>2)<< 3)+(i&3);
+		uint32_t sumBits = 0;
+		const int off = ((i>>2)<< 3)+(i&3);
 
 		for (int j=0; j<len; j++)
-			sum += data[j]*weights[j];
+			sumBits += (uint32_t)((int32_t)data[j]*(int32_t)weights[j]);
 
+		int32_t sum;
+		// SIMD”Å‚Æ“¯‚¶32bit wrapŒ‹‰Ê‚ðA–¢’è‹`“®ì‚È‚µ‚Å•„†•t‚«’l‚Ö–ß‚·B
+		std::memcpy(&sum,&sumBits,sizeof(sum));
 		vals[i] = sum*wf[off]*(*scale)+wf[off+4];
 		weights += len;
 	}
@@ -1818,12 +1868,65 @@ void computeNetwork0new_C(const float *datai, const float *weights, uint8_t *d)
 }
 
 
+struct PrescreenerKernels8
+{
+	void (*oldInputInt16)(const uint8_t*,const int,float*);
+	void (*oldNetworkInt16)(const float*,const float*,uint8_t*);
+	void (*oldInputFloat)(const uint8_t*,const int,float*);
+	void (*oldNetworkFloat)(const float*,const float*,uint8_t*);
+	void (*newInput)(const uint8_t*,const int,float*);
+	void (*newNetwork)(const float*,const float*,uint8_t*);
+	int (*processLine)(const uint8_t*,int,uint8_t*,const uint8_t*,const int,const uint16_t*);
+};
+
+static PrescreenerKernels8 makePrescreenerKernels8(const KernelSet& backend)
+{
+	PrescreenerKernels8 result = { uc2s48_C, computeNetwork0_i16_C,
+		uc2f48_C, computeNetwork0_C, uc2s64_C, computeNetwork0new_C, processLine0_C };
+#if SSE2_ASM_AVAILABLE
+	if (backend.has_sse2)
+		result = { uc2s48_SSE2, computeNetwork0_i16_SSE2, uc2f48_SSE2,
+			computeNetwork0_SSE2, uc2s64_SSE2, computeNetwork0new_SSE2, processLine0_SSE2 };
+#endif
+#if AVX_ASM_AVAILABLE
+	if (backend.has_avx)
+		result = { uc2s48_AVX, computeNetwork0_i16_AVX, uc2f48_AVX,
+			computeNetwork0_AVX, uc2s64_AVX, computeNetwork0new_AVX, processLine0_AVX };
+#endif
+#if AVX2_ASM_AVAILABLE
+	if (backend.has_avx2)
+	{
+		result.oldInputInt16 = uc2s48_AVX2;
+		result.oldNetworkInt16 = computeNetwork0_i16_AVX2;
+		result.oldInputFloat = uc2f48_AVX2;
+		result.newInput = uc2s64_AVX2;
+		result.newNetwork = computeNetwork0new_AVX2;
+		result.processLine = processLine0_AVX2;
+	}
+	if (backend.has_fma3) result.oldNetworkFloat = computeNetwork0_FMA3;
+#endif
+#if !defined(_WIN32) || defined(_WIN64)
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	{
+		result.oldInputInt16 = uc2s48_AVX512;
+		result.oldNetworkInt16 = computeNetwork0_i16_AVX512;
+		result.oldInputFloat = uc2f48_AVX512;
+		result.oldNetworkFloat = computeNetwork0_AVX512;
+		result.newInput = uc2s64_AVX512;
+		result.newNetwork = computeNetwork0new_AVX512;
+		result.processLine = processLine0_AVX512;
+	}
+#endif
+	return result;
+}
+
 void evalFunc_1(void *ps)
 {
 	PS_INFO *pss = (PS_INFO *)ps;
 	float *input = pss->input;
 	const float *weights0 = pss->weights0;
 	const int opt = pss->opt;
+	const PrescreenerKernels8 kernels = makePrescreenerKernels8(getKernelSet(opt));
 	const int pscrn = pss->pscrn;
 	const bool int16_prescreener = pss->int16_prescreener;
 	void (*uc2s)(const uint8_t*,const int,float*);
@@ -1831,53 +1934,26 @@ void evalFunc_1(void *ps)
 	int (*processLine0)(const uint8_t*,int,uint8_t*,const uint8_t*,const int,const uint16_t*);
 	uint16_t *data16=pss->val_min_max;
 
-	if (opt==1) processLine0=processLine0_C;
-	else
-	{
-		if (opt>=5) processLine0=processLine0_AVX2;
-		else
-		{
-			if (opt>=4) processLine0=processLine0_AVX;
-			else processLine0=processLine0_SSE2;
-		}
-	}
+	processLine0 = kernels.processLine;
 
 	if (pscrn<2) // original prescreener
 	{
 		if (int16_prescreener) // int16 dot products
 		{
-			uc2s=uc2s48_C;
-			if      (opt>=5) uc2s=uc2s48_AVX2;
-			else if (opt>=4) uc2s=uc2s48_AVX;
-			else if (opt>1)  uc2s=uc2s48_SSE2;
-			computeNetwork0=computeNetwork0_i16_C;
-			if      (opt>=5) computeNetwork0=computeNetwork0_i16_AVX2;
-			else if (opt>=4) computeNetwork0=computeNetwork0_i16_AVX;
-			else if (opt>1)  computeNetwork0=computeNetwork0_i16_SSE2;
+			uc2s = kernels.oldInputInt16;
+			computeNetwork0 = kernels.oldNetworkInt16;
 		}
 		else
 		{
-			uc2s=uc2f48_C;
-			if      (opt>=5) uc2s=uc2f48_AVX2;
-			else if (opt>=4) uc2s=uc2f48_AVX;
-			else if (opt>1)  uc2s=uc2f48_SSE2;
-			computeNetwork0=computeNetwork0_C;
-			if      (opt==6) computeNetwork0=computeNetwork0_AVX2;
-			else if (opt>=4) computeNetwork0=computeNetwork0_AVX;
-			else if (opt>1)  computeNetwork0=computeNetwork0_SSE2;
+			uc2s = kernels.oldInputFloat;
+			computeNetwork0 = kernels.oldNetworkFloat;
 		}
 	}
 	else // new prescreener
 	{
 		// only int16 dot products
-		uc2s=uc2s64_C;
-		if      (opt>=5) uc2s=uc2s64_AVX2;
-		else if (opt>=4) uc2s=uc2s64_AVX;
-		else if (opt>1)  uc2s=uc2s64_SSE2;
-		computeNetwork0=computeNetwork0new_C;
-		if      (opt>=5) computeNetwork0=computeNetwork0new_AVX2;
-		else if (opt>=4) computeNetwork0=computeNetwork0new_AVX;
-		else if (opt>1)  computeNetwork0=computeNetwork0new_SSE2;
+		uc2s = kernels.newInput;
+		computeNetwork0 = kernels.newNetwork;
 	}
 
 	uint8_t b = pss->current_plane;
@@ -2170,6 +2246,76 @@ int processLine0_AVX2_16(const uint8_t *tempu, int width, uint8_t *dstp, const u
 }
 
 
+struct PrescreenerKernels16
+{
+	void (*oldInputInt16)(const uint8_t*,const int,float*);
+	void (*oldNetworkInt16)(const float*,const float*,uint8_t*);
+	void (*oldInputFloat)(const uint8_t*,const int,float*);
+	void (*oldNetworkFloat)(const float*,const float*,uint8_t*);
+	void (*newInput)(const uint8_t*,const int,float*);
+	void (*newNetwork)(const float*,const float*,uint8_t*);
+	int (*processLine)(const uint8_t*,int,uint8_t*,const uint8_t*,const int,const uint16_t*);
+};
+
+static PrescreenerKernels16 makePrescreenerKernels16(const KernelSet& backend, const uint8_t bits)
+{
+	PrescreenerKernels16 result = { uc2s48_C_16, computeNetwork0_i16_C_16,
+		uc2f48_C_16, computeNetwork0_C, uc2s64_C_16, computeNetwork0new_C_16, processLine0_C_16 };
+#if SSE2_ASM_AVAILABLE
+	if (backend.has_sse2)
+	{
+		result.oldNetworkInt16 = computeNetwork0_i16_SSE2;
+		result.oldInputFloat = uc2f48_SSE2_16;
+		result.oldNetworkFloat = computeNetwork0_SSE2;
+		result.newNetwork = computeNetwork0new_SSE2;
+	}
+	if (backend.has_sse41) result.processLine = processLine0_SSE2_16;
+#endif
+#if AVX_ASM_AVAILABLE
+	if (backend.has_avx)
+	{
+		result.oldNetworkInt16 = computeNetwork0_i16_AVX;
+		result.oldInputFloat = uc2f48_AVX_16;
+		result.oldNetworkFloat = computeNetwork0_AVX;
+		result.newNetwork = computeNetwork0new_AVX;
+		result.processLine = processLine0_AVX_16;
+	}
+#endif
+#if AVX2_ASM_AVAILABLE
+	if (backend.has_avx2)
+	{
+		result.oldNetworkInt16 = computeNetwork0_i16_AVX2;
+		result.oldInputFloat = uc2f48_AVX2_16;
+		result.newNetwork = computeNetwork0new_AVX2;
+		result.processLine = processLine0_AVX2_16;
+	}
+	if (backend.has_fma3) result.oldNetworkFloat = computeNetwork0_FMA3;
+#endif
+#if !defined(_WIN32) || defined(_WIN64)
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	{
+		result.oldInputFloat = uc2f48_AVX512_16;
+		result.oldNetworkFloat = computeNetwork0_AVX512;
+		if (bits <= 14)
+		{
+			result.oldInputInt16 = uc2s48_AVX512_16;
+			result.oldNetworkInt16 = computeNetwork0_i16_AVX512;
+			result.newInput = uc2s64_AVX512_16;
+			result.newNetwork = computeNetwork0new_AVX512;
+		}
+		result.processLine = processLine0_AVX512_16;
+	}
+#endif
+	if (bits > 14)
+	{
+		result.oldInputInt16 = uc2s48_C_16;
+		result.oldNetworkInt16 = computeNetwork0_i16_C_16;
+		result.newInput = uc2s64_C_16;
+		result.newNetwork = computeNetwork0new_C_16;
+	}
+	return result;
+}
+
 void evalFunc_1_16(void *ps)
 {
 	PS_INFO *pss = (PS_INFO *)ps;
@@ -2179,76 +2325,32 @@ void evalFunc_1_16(void *ps)
 	const int pscrn = pss->pscrn;
 	const bool int16_prescreener = pss->int16_prescreener;
 	const uint8_t bits_per_pixel = pss->bits_per_pixel;
+	const PrescreenerKernels16 kernels = makePrescreenerKernels16(getKernelSet(opt), bits_per_pixel);
 	void(*uc2s)(const uint8_t*, const int, float*);
 	void(*computeNetwork0)(const float*, const float*, uint8_t*);
 	int(*processLine0)(const uint8_t*, int, uint8_t*, const uint8_t*, const int,const uint16_t *);
 	uint16_t *data16=pss->val_min_max;
 
-	if (opt<3) processLine0=processLine0_C_16;
-	else
-	{
-		if (opt>=5) processLine0=processLine0_AVX2_16;
-		else
-		{
-			if (opt>=4) processLine0=processLine0_AVX_16;
-			else processLine0=processLine0_SSE2_16;
-		}
-	}
+	processLine0 = kernels.processLine;
 
 	if (pscrn<2) // original prescreener
 	{
 		if (int16_prescreener) // int16 dot products
 		{
-			uc2s=uc2s48_C_16;
-			if ((opt==1) || (bits_per_pixel>14)) computeNetwork0=computeNetwork0_i16_C;
-			else
-			{
-				if (opt>=5) computeNetwork0=computeNetwork0_i16_AVX2;
-				else
-				{
-					if (opt>=4) computeNetwork0=computeNetwork0_i16_AVX;
-					else computeNetwork0=computeNetwork0_i16_SSE2;
-				}
-			}
+			uc2s = kernels.oldInputInt16;
+			computeNetwork0 = kernels.oldNetworkInt16;
 		}
 		else
 		{
-			if (opt==1) uc2s=uc2f48_C_16;
-			else
-			{
-				if (opt>=5) uc2s=uc2f48_AVX2_16;
-				else
-				{
-					if (opt>=4) uc2s=uc2f48_AVX_16;
-					else uc2s=uc2f48_SSE2_16;
-				}
-			}
-			if (opt==1) computeNetwork0=computeNetwork0_C;
-			else
-			{
-				if (opt>=6) computeNetwork0=computeNetwork0_AVX2;
-				else
-				{
-					if (opt>=4) computeNetwork0=computeNetwork0_AVX;
-					else computeNetwork0=computeNetwork0_SSE2;
-				}
-			}
+			uc2s = kernels.oldInputFloat;
+			computeNetwork0 = kernels.oldNetworkFloat;
 		}
 	}
 	else // new prescreener
 	{
 		// only int16 dot products
-		uc2s = uc2s64_C_16;
-		if ((opt==1) || (bits_per_pixel>14)) computeNetwork0=computeNetwork0new_C_16;
-		else
-		{
-			if (opt>=5) computeNetwork0=computeNetwork0new_AVX2;
-			else
-			{
-				if (opt>=4) computeNetwork0=computeNetwork0new_AVX;
-				else computeNetwork0=computeNetwork0new_SSE2;
-			}
-		}
+		uc2s = kernels.newInput;
+		computeNetwork0 = kernels.newNetwork;
 	}
 
 	uint8_t b = pss->current_plane;
@@ -2429,27 +2531,57 @@ int processLine0_AVX2_32(const uint8_t *tempu, int width, uint8_t *dstp, const u
 }
 
 
+struct PrescreenerKernels32
+{
+	void (*input)(const uint8_t*,const int,float*);
+	void (*network)(const float*,const float*,uint8_t*);
+	int (*processLine)(const uint8_t*,int,uint8_t*,const uint8_t*,const int);
+};
+
+static PrescreenerKernels32 makePrescreenerKernels32(const KernelSet& backend)
+{
+	PrescreenerKernels32 result = { uc2f48_C_32, computeNetwork0_C, processLine0_C_32 };
+#if SSE2_ASM_AVAILABLE
+	if (backend.has_sse2) result.network = computeNetwork0_SSE2;
+	if (backend.has_sse2) result.processLine = processLine0_SSE2_32;
+#endif
+#if AVX_ASM_AVAILABLE
+	if (backend.has_avx)
+	{
+		result.network = computeNetwork0_AVX;
+		result.processLine = processLine0_AVX_32;
+	}
+#endif
+#if AVX2_ASM_AVAILABLE
+	if (backend.has_avx2) result.processLine = processLine0_AVX2_32;
+	if (backend.has_fma3) result.network = computeNetwork0_FMA3;
+#endif
+#if !defined(_WIN32) || defined(_WIN64)
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	{
+		result.input = uc2f48_AVX512_32;
+		result.network = computeNetwork0_AVX512;
+		result.processLine = processLine0_AVX512_32;
+	}
+#endif
+	return result;
+}
+
 void evalFunc_1_32(void *ps)
 {
 	PS_INFO *pss = (PS_INFO *)ps;
 	float *input = pss->input;
 	const float *weights0 = pss->weights0;
 	const int opt = pss->opt;
+	const PrescreenerKernels32 kernels = makePrescreenerKernels32(getKernelSet(opt));
 	const int pscrn = pss->pscrn;
 	void(*uc2s)(const uint8_t*, const int, float*);
 	void(*computeNetwork0)(const float*, const float*, uint8_t*);
 	int(*processLine0)(const uint8_t*, int, uint8_t*, const uint8_t*, const int);
 
-	processLine0=processLine0_C_32;
-	if      (opt>=5) processLine0=processLine0_AVX2_32;
-	else if (opt>=4) processLine0=processLine0_AVX_32;
-	else if (opt>1)  processLine0=processLine0_SSE2_32;
-
-	computeNetwork0=computeNetwork0_C;
-	if      (opt>=6) computeNetwork0=computeNetwork0_AVX2;
-	else if (opt>=4) computeNetwork0=computeNetwork0_AVX;
-	else if (opt>1)  computeNetwork0=computeNetwork0_SSE2;
-	uc2s=uc2f48_C_32;
+	processLine0 = kernels.processLine;
+	computeNetwork0 = kernels.network;
+	uc2s = kernels.input;
 
 	uint8_t b = pss->current_plane;
 
@@ -2646,6 +2778,89 @@ void weightedAvgElliottMul5_m16_C(const float *w,const int n,float *mstd)
 }
 
 
+struct PredictorKernels
+{
+	void (*extract)(const uint8_t*,const int,const int,const int,float*,float*);
+	void (*dotProd)(const float*,const float*,float*,const int,const int,const float*);
+	void (*exp)(float*,const int);
+	void (*weightedAverage)(const float*,const int,float*);
+};
+
+static PredictorKernels makePredictorKernels8(const KernelSet& backend,
+	const PredictorPlan& plan, const bool int16Predictor, const int asize, const int fapprox)
+{
+	auto intExtract = extract_m8_i16_C;
+	auto intDot = dotProdS_C;
+	auto floatExtract = extract_m8_C;
+	auto floatDot = dotProd_C;
+	auto e0 = e0_m16_C;
+	auto e1 = e1_m16_C;
+	auto e2 = e2_m16_C;
+	auto weightedAverage = weightedAvgElliottMul5_m16_C;
+#if SSE2_ASM_AVAILABLE
+	if (backend.has_sse2)
+	{
+		intExtract = extract_m8_i16_SSE2;
+		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_SSE2 : dotProd_m48_m16_i16_SSE2;
+		floatExtract = extract_m8_SSE2;
+		floatDot = (asize%48)!=0 ? dotProd_m32_m16_SSE2 : dotProd_m48_m16_SSE2;
+		e0 = e0_m16_SSE2;
+		e1 = e1_m16_SSE2;
+		e2 = e2_m16_SSE2;
+		weightedAverage = weightedAvgElliottMul5_m16_SSE2;
+	}
+#endif
+#if AVX_ASM_AVAILABLE
+	if (backend.has_avx)
+	{
+		intExtract = extract_m8_i16_AVX;
+		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX : dotProd_m48_m16_i16_AVX;
+		floatExtract = extract_m8_AVX;
+		floatDot = (asize%48)!=0 ? dotProd_m32_m16_AVX : dotProd_m48_m16_AVX;
+		e0 = e0_m16_AVX;
+		e1 = e1_m16_AVX;
+		e2 = e2_m16_AVX;
+		weightedAverage = weightedAvgElliottMul5_m16_AVX;
+	}
+#endif
+#if AVX2_ASM_AVAILABLE
+	if (backend.has_avx2)
+	{
+		intExtract = extract_m8_i16_AVX2;
+		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX2 : dotProd_m48_m16_i16_AVX2;
+		e1 = e1_m16_AVX2;
+		e2 = e2_m16_AVX2;
+	}
+	if (backend.has_fma3)
+	{
+		floatExtract = extract_m8_FMA3;
+		floatDot = (asize%48)!=0 ? dotProd_m32_m16_FMA3 : dotProd_m48_m16_FMA3;
+		e0 = e0_m16_FMA3;
+		weightedAverage = weightedAvgElliottMul5_m16_FMA3;
+	}
+#endif
+#if !defined(_WIN32) || defined(_WIN64)
+	if (plan.dot == PredictorDot::AVX512Float)
+		floatDot = (asize%48)!=0 ? dotProd_m32_m16_AVX512 : dotProd_m48_m16_AVX512;
+	else if (plan.dot == PredictorDot::AVX512Int16)
+		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512 : dotProd_m48_m16_i16_AVX512;
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	{
+		intExtract = extract_m8_i16_AVX512;
+		floatExtract = extract_m8_AVX512;
+		e0 = e0_m16_AVX512;
+		e1 = e1_m16_AVX512;
+		e2 = e2_m16_AVX512;
+		weightedAverage = weightedAvgElliottMul5_m16_AVX512;
+	}
+#endif
+	if (plan.dot == PredictorDot::CInt16)
+		intDot = dotProdS_C;
+	return { int16Predictor ? intExtract : floatExtract,
+		int16Predictor ? intDot : floatDot,
+		(fapprox&12)==0 ? e2 : (fapprox&12)==4 ? e1 : e0, weightedAverage };
+}
+
 void evalFunc_2(void *ps)
 {
 	PS_INFO *pss = (PS_INFO *)ps;
@@ -2653,6 +2868,7 @@ void evalFunc_2(void *ps)
 	float *temp = pss->temp;
 	float **weights1 = pss->weights1;
 	const int opt = pss->opt;
+	const KernelSet backend = getKernelSet(opt);
 	const int qual = pss->qual;
 	const int asize = pss->asize;
 	const int nns = pss->nns;
@@ -2662,69 +2878,20 @@ void evalFunc_2(void *ps)
 	const int ydia = pss->ydia;
 	const int fapprox = pss->fapprox;
 	const bool int16_predictor = pss->int16_predictor;
+	const PredictorPlan predictorPlan = nnedi3_backend::make_predictor_plan(
+		backend, int16_predictor, 8);
 	const float scale = (float)(1.0/(double)qual);
 	void (*extract)(const uint8_t*,const int,const int,const int,float*,float*);
 	void (*dotProd)(const float*,const float*,float*,const int,const int,const float*);
 	void (*expf)(float *,const int);
 	void (*wae5)(const float*,const int,float*);
 
-	wae5=weightedAvgElliottMul5_m16_C;
-	if      (opt>=6) wae5=weightedAvgElliottMul5_m16_AVX2;
-	else if (opt>=4) wae5=weightedAvgElliottMul5_m16_AVX;
-	else if (opt>1)  wae5=weightedAvgElliottMul5_m16_SSE2;
-
-	if (int16_predictor) // use int16 dot products
-	{
-		extract=extract_m8_i16_C;
-		if      (opt>=5) extract=extract_m8_i16_AVX2;
-		else if (opt>=4) extract=extract_m8_i16_AVX;
-		else if (opt>1)  extract=extract_m8_i16_SSE2;
-		dotProd=dotProdS_C;
-		if (opt>=5)
-			dotProd= ((asize%48)!=0) ? dotProd_m32_m16_i16_AVX2 : dotProd_m48_m16_i16_AVX2;
-		else if (opt>=4)
-			dotProd= ((asize%48)!=0) ? dotProd_m32_m16_i16_AVX : dotProd_m48_m16_i16_AVX;
-		else if (opt>1)
-			dotProd= ((asize%48)!=0) ? dotProd_m32_m16_i16_SSE2 : dotProd_m48_m16_i16_SSE2;
-	}
-	else // use float dot products
-	{
-		extract=extract_m8_C;
-		if      (opt>=6) extract=extract_m8_AVX2;
-		else if (opt>=4) extract=extract_m8_AVX;
-		else if (opt>1)  extract=extract_m8_SSE2;
-		dotProd=dotProd_C;
-		if (opt>=6)
-			dotProd = ((asize%48)!=0) ? dotProd_m32_m16_AVX2 : dotProd_m48_m16_AVX2;
-		else if (opt>=4)
-			dotProd = ((asize%48)!=0) ? dotProd_m32_m16_AVX : dotProd_m48_m16_AVX;
-		else if (opt>1)
-			dotProd = ((asize%48)!=0) ? dotProd_m32_m16_SSE2 : dotProd_m48_m16_SSE2;
-	}
-
-	// expfé–¢æ•°ã®é¸æŠž
-	if ((fapprox & 12)==0) // use slow exp
-	{
-		expf = e2_m16_C;
-		if      (opt >= 5) expf = e2_m16_AVX2;
-		else if (opt >= 4) expf = e2_m16_AVX;
-		else if (opt > 1)  expf = e2_m16_SSE2;
-	}
-	else if ((fapprox & 12)==4) // use faster exp
-	{
-		expf = e1_m16_C;
-		if      (opt >= 5) expf = e1_m16_AVX2;
-		else if (opt >= 4) expf = e1_m16_AVX;
-		else if (opt > 1)  expf = e1_m16_SSE2;
-	}
-	else // use fastest exp
-	{
-		expf = e0_m16_C;
-		if      (opt >= 6) expf = e0_m16_AVX2;
-		else if (opt >= 4) expf = e0_m16_AVX;
-		else if (opt > 1)  expf = e0_m16_SSE2;
-	}
-
+	const PredictorKernels selected = makePredictorKernels8(
+		backend, predictorPlan, int16_predictor, asize, fapprox);
+	extract = selected.extract;
+	dotProd = selected.dotProd;
+	expf = selected.exp;
+	wae5 = selected.weightedAverage;
 	uint8_t b = pss->current_plane;
 
 	if (((b==0) && pss->Y) || ((b==1) && pss->U) || ((b==2) && pss->V) || ((b==3) && pss->A))
@@ -2770,8 +2937,18 @@ void evalFunc_2(void *ps)
 		NNPixels+=ystart*NNPixels_pitch;
 
 		const uint8_t *srcpp = srcp-((ydia-1)*src_pitch+xdiad2m1);
-#if ENABLE_AVX
-		if (opt>=4)
+		void (*castScale)(const float*,const float*,uint8_t*,const uint32_t,const uint32_t) = NULL;
+#if AVX_ASM_AVAILABLE
+		if (backend.has_avx) castScale = castScale_AVX;
+#endif
+#if AVX2_ASM_AVAILABLE
+		if (backend.has_fma3) castScale = castScale_FMA3;
+#endif
+#if !defined(_WIN32) || defined(_WIN64)
+		if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+			castScale = castScale_AVX512;
+#endif
+		if (castScale != NULL)
 		{
 			for (int y=ystart; y<ystop; y+=2)
 			{
@@ -2788,16 +2965,16 @@ void evalFunc_2(void *ps)
 						expf(temp,nns);
 						wae5(temp,nns,mstd);
 					}
-					castScale_AVX(mstd,&scale,dstp+x,val_min,val_max);
+					castScale(mstd,&scale,dstp+x,val_min,val_max);
 				}
 				srcpp += src_pitch2;
 				dstp += dst_pitch2;
 				NNPixels+=NNPixels_pitch_2;
 			}
-		} else
-#endif
-#if ENABLE_SSE2
-		if (opt > 1)
+		}
+		else
+#if SSE2_ASM_AVAILABLE
+		if (backend.has_sse2)
 		{
 			for (int y=ystart; y<ystop; y+=2)
 			{
@@ -2940,7 +3117,8 @@ void extract_m8_i16_C_16_4(const uint8_t *srcp, const int stride, const int xdia
 	const float scale = (float)(1.0/(double)(xdia*ydia));
 
 	mstd[0] = sum*scale;
-	const double tmp = (double)sumsq*scale-(double)mstd[0]*mstd[0];
+	const double meanSquare = (double)mstd[0]*mstd[0];
+	const double tmp = std::fma((double)sumsq,(double)scale,-meanSquare);
 	mstd[3] = 0.0f;
 	if (tmp<=FLT_EPSILON) mstd[1] = mstd[2] = 0.0f;
 	else
@@ -2982,6 +3160,85 @@ void extract_m8_C_16(const uint8_t *srcp,const int stride,const int xdia,const i
 	}
 }
 
+
+static PredictorKernels makePredictorKernels16(const KernelSet& backend,
+	const PredictorPlan& plan, const bool int16Predictor, const uint8_t bits,
+	const int asize, const int fapprox)
+{
+	auto intExtract = extract_m8_i16_C_16;
+	auto intDot = dotProdS_C_16;
+	auto floatExtract = extract_m8_C_16;
+	auto floatDot = dotProd_C;
+	auto e0 = e0_m16_C;
+	auto e1 = e1_m16_C;
+	auto e2 = e2_m16_C;
+	auto weightedAverage = weightedAvgElliottMul5_m16_C;
+#if SSE2_ASM_AVAILABLE
+	if (backend.has_sse2)
+	{
+		intExtract = bits<=10 ? extract_m8_i16_SSE2_16
+			: backend.has_sse41 ? extract_m8_i16_C_16_2 : extract_m8_i16_C_16;
+		if (bits<=14) intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_SSE2 : dotProd_m48_m16_i16_SSE2;
+		floatExtract = extract_m8_SSE2_16;
+		floatDot = (asize%48)!=0 ? dotProd_m32_m16_SSE2 : dotProd_m48_m16_SSE2;
+		e0 = e0_m16_SSE2;
+		e1 = e1_m16_SSE2;
+		e2 = e2_m16_SSE2;
+		weightedAverage = weightedAvgElliottMul5_m16_SSE2;
+	}
+#endif
+#if AVX_ASM_AVAILABLE
+	if (backend.has_avx)
+	{
+		intExtract = bits<=10 ? extract_m8_i16_AVX_16 : extract_m8_i16_C_16_3;
+		if (bits<=14) intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX : dotProd_m48_m16_i16_AVX;
+		floatExtract = extract_m8_AVX_16;
+		floatDot = (asize%48)!=0 ? dotProd_m32_m16_AVX : dotProd_m48_m16_AVX;
+		e0 = e0_m16_AVX;
+		e1 = e1_m16_AVX;
+		e2 = e2_m16_AVX;
+		weightedAverage = weightedAvgElliottMul5_m16_AVX;
+	}
+#endif
+#if AVX2_ASM_AVAILABLE
+	if (backend.has_avx2)
+	{
+		intExtract = bits<=10 ? extract_m8_i16_AVX2_16 : extract_m8_i16_C_16_4;
+		if (bits<=14) intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX2 : dotProd_m48_m16_i16_AVX2;
+		e1 = e1_m16_AVX2;
+		e2 = e2_m16_AVX2;
+	}
+	if (backend.has_fma3)
+	{
+		floatExtract = extract_m8_FMA3_16;
+		floatDot = (asize%48)!=0 ? dotProd_m32_m16_FMA3 : dotProd_m48_m16_FMA3;
+		e0 = e0_m16_FMA3;
+		weightedAverage = weightedAvgElliottMul5_m16_FMA3;
+	}
+#endif
+#if !defined(_WIN32) || defined(_WIN64)
+	if (plan.dot == PredictorDot::AVX512Float)
+		floatDot = (asize%48)!=0 ? dotProd_m32_m16_AVX512 : dotProd_m48_m16_AVX512;
+	else if (plan.dot == PredictorDot::AVX512Int16)
+		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512 : dotProd_m48_m16_i16_AVX512;
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	{
+		intExtract = bits<=10 ? extract_m8_i16_AVX512_16_10
+			: bits<=14 ? extract_m8_i16_AVX512_16 : extract_m8_i16_C_16;
+		floatExtract = extract_m8_AVX512_16;
+		e0 = e0_m16_AVX512;
+		e1 = e1_m16_AVX512;
+		e2 = e2_m16_AVX512;
+		weightedAverage = weightedAvgElliottMul5_m16_AVX512;
+	}
+#endif
+	if (plan.dot == PredictorDot::CInt16)
+		intDot = dotProdS_C_16;
+	return { int16Predictor ? intExtract : floatExtract,
+		int16Predictor ? intDot : floatDot,
+		(fapprox&12)==0 ? e2 : (fapprox&12)==4 ? e1 : e0, weightedAverage };
+}
+
 void evalFunc_2_16(void *ps)
 {
 	PS_INFO *pss = (PS_INFO *)ps;
@@ -2989,6 +3246,7 @@ void evalFunc_2_16(void *ps)
 	float *temp = pss->temp;
 	float **weights1 = pss->weights1;
 	const int opt = pss->opt;
+	const KernelSet backend = getKernelSet(opt);
 	const int qual = pss->qual;
 	const int asize = pss->asize;
 	const int nns = pss->nns;
@@ -3000,74 +3258,19 @@ void evalFunc_2_16(void *ps)
 	const bool int16_predictor = pss->int16_predictor;
 	const float scale = (float)(1.0/(double)qual);
 	const uint8_t bits_per_pixel = pss->bits_per_pixel;
+	const PredictorPlan predictorPlan = nnedi3_backend::make_predictor_plan(
+		backend, int16_predictor, bits_per_pixel);
 	void(*extract)(const uint8_t*, const int, const int, const int, float*, float*);
 	void(*dotProd)(const float*, const float*, float*, const int, const int, const float*);
 	void(*expf)(float *, const int);
 	void(*wae5)(const float*, const int, float*);
 
-	wae5=weightedAvgElliottMul5_m16_C;
-	if      (opt>=6) wae5=weightedAvgElliottMul5_m16_AVX2;
-	else if (opt>=4) wae5=weightedAvgElliottMul5_m16_AVX;
-	else if (opt>1)  wae5=weightedAvgElliottMul5_m16_SSE2;
-
-	if (int16_predictor) // use int16 dot products
-	{
-		extract = extract_m8_i16_C_16;
-		if (bits_per_pixel <= 10) {
-			if      (opt >= 5) extract = extract_m8_i16_AVX2_16;
-			else if (opt >= 4) extract = extract_m8_i16_AVX_16;
-			else if (opt >= 2) extract = extract_m8_i16_SSE2_16;
-		} else {
-			if      (opt >= 5) extract = extract_m8_i16_C_16_4;
-			else if (opt >= 4) extract = extract_m8_i16_C_16_3;
-			else if (opt >= 3) extract = extract_m8_i16_C_16_2;
-		}
-
-		dotProd = dotProdS_C_16;
-		if ((opt > 1) && (bits_per_pixel <= 14)) {
-			if (opt >= 5)
-				dotProd = ((asize%48) != 0) ? dotProd_m32_m16_i16_AVX2 : dotProd_m48_m16_i16_AVX2;
-			else if (opt >= 4)
-				dotProd = ((asize%48) != 0) ? dotProd_m32_m16_i16_AVX : dotProd_m48_m16_i16_AVX;
-			else
-				dotProd = ((asize%48) != 0) ? dotProd_m32_m16_i16_SSE2 : dotProd_m48_m16_i16_SSE2;
-		}
-	}
-	else // use float dot products
-	{
-		extract = extract_m8_C_16;
-		if      (opt >= 6) extract = extract_m8_AVX2;
-		else if (opt >= 4) extract = extract_m8_AVX;
-		else if (opt > 1)  extract = extract_m8_SSE2;
-
-		dotProd = dotProd_C;
-		if      (opt >= 6) dotProd = ((asize%48) != 0) ? dotProd_m32_m16_AVX2 : dotProd_m48_m16_AVX2;
-		else if (opt >= 4) dotProd = ((asize%48) != 0) ? dotProd_m32_m16_AVX : dotProd_m48_m16_AVX;
-		else if (opt > 1)  dotProd = ((asize%48) != 0) ? dotProd_m32_m16_SSE2 : dotProd_m48_m16_SSE2;
-	}
-
-	if ((fapprox & 12)==0) // use slow exp
-	{
-		expf = e2_m16_C;
-		if      (opt>=5) expf = e2_m16_AVX2;
-		else if (opt>=4) expf = e2_m16_AVX;
-		else if (opt>1)  expf = e2_m16_SSE2;
-	}
-	else if ((fapprox & 12)==4) // use faster exp
-	{
-		expf = e1_m16_C;
-		if      (opt>=5) expf = e1_m16_AVX2;
-		else if (opt>=4) expf = e1_m16_AVX;
-		else if (opt>1)  expf = e1_m16_SSE2;
-	}
-	else // use fastest exp
-	{
-		expf = e0_m16_C;
-		if      (opt>=6) expf = e0_m16_AVX2;
-		else if (opt>=4) expf = e0_m16_AVX;
-		else if (opt>1)  expf = e0_m16_SSE2;
-	}
-
+	const PredictorKernels selected = makePredictorKernels16(
+		backend, predictorPlan, int16_predictor, bits_per_pixel, asize, fapprox);
+	extract = selected.extract;
+	dotProd = selected.dotProd;
+	expf = selected.exp;
+	wae5 = selected.weightedAverage;
 	uint8_t b = pss->current_plane;
 
 	if (((b==0) && pss->Y) || ((b==1) && pss->U) || ((b==2) && pss->V) || ((b==3) && pss->A))
@@ -3113,8 +3316,18 @@ void evalFunc_2_16(void *ps)
 		const uint8_t *srcpp = srcp-((ydia-1)*src_pitch+(xdiad2m1 << 1));
 		NNPixels+=ystart*NNPixels_pitch;
 
-#if ENABLE_AVX
-		if (opt>=4)
+		void (*castScale)(const float*,const float*,uint16_t*,const uint32_t,const uint32_t) = NULL;
+#if AVX_ASM_AVAILABLE
+		if (backend.has_avx) castScale = castScale_AVX_16;
+#endif
+#if AVX2_ASM_AVAILABLE
+		if (backend.has_fma3) castScale = castScale_FMA3_16;
+#endif
+#if !defined(_WIN32) || defined(_WIN64)
+		if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+			castScale = castScale_AVX512_16;
+#endif
+		if (castScale != NULL)
 		{
 			for (int y=ystart; y<ystop; y+=2)
 			{
@@ -3133,7 +3346,7 @@ void evalFunc_2_16(void *ps)
 						expf(temp,nns);
 						wae5(temp,nns,mstd);
 					}
-					castScale_AVX_16(mstd,&scale,dst0+x,val_min,val_max);
+					castScale(mstd,&scale,dst0+x,val_min,val_max);
 				}
 				srcpp += src_pitch2;
 				dstp += dst_pitch2;
@@ -3141,9 +3354,8 @@ void evalFunc_2_16(void *ps)
 			}
 		}
 		else
-#endif
-#if ENABLE_SSE2
-		if (opt > 1)
+#if SSE2_ASM_AVAILABLE
+		if (backend.has_sse2)
 		{
 			for (int y=ystart; y<ystop; y+=2)
 			{
@@ -3234,6 +3446,67 @@ void extract_m8_C_32(const uint8_t *srcp, const int stride, const int xdia, cons
 }
 
 
+static PredictorKernels makePredictorKernels32(const KernelSet& backend,
+	const PredictorPlan& plan, const int asize, const int fapprox)
+{
+	auto extract = extract_m8_C_32;
+	auto dotProd = dotProd_C;
+	auto e0 = e0_m16_C;
+	auto e1 = e1_m16_C;
+	auto e2 = e2_m16_C;
+	auto weightedAverage = weightedAvgElliottMul5_m16_C;
+#if SSE2_ASM_AVAILABLE
+	if (backend.has_sse2)
+	{
+		extract = extract_m8_SSE2_32;
+		dotProd = (asize%48)!=0 ? dotProd_m32_m16_SSE2 : dotProd_m48_m16_SSE2;
+		e0 = e0_m16_SSE2;
+		e1 = e1_m16_SSE2;
+		e2 = e2_m16_SSE2;
+		weightedAverage = weightedAvgElliottMul5_m16_SSE2;
+	}
+#endif
+#if AVX_ASM_AVAILABLE
+	if (backend.has_avx)
+	{
+		extract = extract_m8_AVX_32;
+		dotProd = (asize%48)!=0 ? dotProd_m32_m16_AVX : dotProd_m48_m16_AVX;
+		e0 = e0_m16_AVX;
+		e1 = e1_m16_AVX;
+		e2 = e2_m16_AVX;
+		weightedAverage = weightedAvgElliottMul5_m16_AVX;
+	}
+#endif
+#if AVX2_ASM_AVAILABLE
+	if (backend.has_avx2)
+	{
+		e1 = e1_m16_AVX2;
+		e2 = e2_m16_AVX2;
+	}
+	if (backend.has_fma3)
+	{
+		extract = extract_m8_FMA3_32;
+		dotProd = (asize%48)!=0 ? dotProd_m32_m16_FMA3 : dotProd_m48_m16_FMA3;
+		e0 = e0_m16_FMA3;
+		weightedAverage = weightedAvgElliottMul5_m16_FMA3;
+	}
+#endif
+#if !defined(_WIN32) || defined(_WIN64)
+	if (plan.dot == PredictorDot::AVX512Float)
+		dotProd = (asize%48)!=0 ? dotProd_m32_m16_AVX512 : dotProd_m48_m16_AVX512;
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	{
+		extract = extract_m8_AVX512_32;
+		e0 = e0_m16_AVX512;
+		e1 = e1_m16_AVX512;
+		e2 = e2_m16_AVX512;
+		weightedAverage = weightedAvgElliottMul5_m16_AVX512;
+	}
+#endif
+	return { extract, dotProd, (fapprox&12)==0 ? e2 : (fapprox&12)==4 ? e1 : e0,
+		weightedAverage };
+}
+
 void evalFunc_2_32(void *ps)
 {
 	PS_INFO *pss = (PS_INFO *)ps;
@@ -3249,52 +3522,20 @@ void evalFunc_2_32(void *ps)
 	const int xdiad2m1 = (xdia >> 1) - 1;
 	const int ydia = pss->ydia;
 	const int fapprox = pss->fapprox;
+	const KernelSet backend = getKernelSet(opt);
+	const PredictorPlan predictorPlan = nnedi3_backend::make_predictor_plan(
+		backend, false, 32);
 	const float scale = (float)(1.0/(double)qual);
 	void(*extract)(const uint8_t*, const int, const int, const int, float*, float*);
 	void(*dotProd)(const float*, const float*, float*, const int, const int, const float*);
 	void(*expf)(float *, const int);
 	void(*wae5)(const float*, const int, float*);
 
-	wae5=weightedAvgElliottMul5_m16_C;
-	if      (opt>=6) wae5=weightedAvgElliottMul5_m16_AVX2;
-	else if (opt>=4) wae5=weightedAvgElliottMul5_m16_AVX;
-	else if (opt>1)  wae5=weightedAvgElliottMul5_m16_SSE2;
-
-	extract=extract_m8_C_32;
-	if      (opt>=6) extract=extract_m8_AVX2_32;
-	else if (opt>=4) extract=extract_m8_AVX_32;
-	else if (opt>1)  extract=extract_m8_SSE2_32;
-
-	dotProd = dotProd_C;
-	if (opt>=6)
-		dotProd = ((asize%48)!=0) ? dotProd_m32_m16_AVX2 : dotProd_m48_m16_AVX2;
-	else if (opt>=4)
-		dotProd = ((asize%48)!=0) ? dotProd_m32_m16_AVX : dotProd_m48_m16_AVX;
-	else if (opt>1)
-		dotProd = ((asize%48)!=0) ? dotProd_m32_m16_SSE2 : dotProd_m48_m16_SSE2;
-
-	if ((fapprox & 12)==0) // use slow exp
-	{
-		expf = e2_m16_C;
-		if      (opt>=5) expf = e2_m16_AVX2;
-		else if (opt>=4) expf = e2_m16_AVX;
-		else if (opt>1)  expf = e2_m16_SSE2;
-	}
-	else if ((fapprox & 12)==4) // use faster exp
-	{
-		expf = e1_m16_C;
-		if      (opt>=5) expf = e1_m16_AVX2;
-		else if (opt>=4) expf = e1_m16_AVX;
-		else if (opt>1)  expf = e1_m16_SSE2;
-	}
-	else // use fastest exp
-	{
-		expf = e0_m16_C;
-		if      (opt>=6) expf = e0_m16_AVX2;
-		else if (opt>=4) expf = e0_m16_AVX;
-		else if (opt>1)  expf = e0_m16_SSE2;
-	}
-
+	const PredictorKernels selected = makePredictorKernels32(backend, predictorPlan, asize, fapprox);
+	extract = selected.extract;
+	dotProd = selected.dotProd;
+	expf = selected.exp;
+	wae5 = selected.weightedAverage;
 	uint8_t b = pss->current_plane;
 
 	if (((b==0) && pss->Y) || ((b==1) && pss->U) || ((b==2) && pss->V) || ((b==3) && pss->A))
@@ -3583,8 +3824,9 @@ AVSValue __cdecl Create_nnedi3_rpow2(AVSValue args, void* user_data, IScriptEnvi
 		env->ThrowError("nnedi3_rpow2: 0 <= threads <= %d!\n",MAX_MT_THREADS);
 	if (threads_rs < 0 || threads_rs > MAX_MT_THREADS)
 		env->ThrowError("nnedi3_rpow2: 0 <= threads_rs <= %d!\n",MAX_MT_THREADS);
-	if (opt < 0 || opt > 7)
-		env->ThrowError("nnedi3_rpow2: opt must be in [0,7]!\n");
+	if (opt < 0 || opt > 8)
+		env->ThrowError("nnedi3_rpow2: opt must be in [0,8]!\n");
+	selectRequestedOpt(opt, env->GetCPUFlags(), env, "nnedi3_rpow2");
 	if (fapprox < 0 || fapprox > 15)
 		env->ThrowError("nnedi3_rpow2: fapprox must be [0,15]!\n");
 

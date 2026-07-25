@@ -37,11 +37,27 @@
 #define PLANAR_422 2
 #define PLANAR_444 3
 
+namespace nnedi3_cpu_detail
+{
+	constexpr uint64_t XCR0_AVX_STATE_MASK = 0x06ull;
+	constexpr uint64_t XCR0_AVX512_STATE_MASK = 0xE6ull;
+
+	constexpr bool Xcr0HasAvxState(uint64_t xcr0)
+	{
+		return (xcr0 & XCR0_AVX_STATE_MASK) == XCR0_AVX_STATE_MASK;
+	}
+
+	constexpr bool Xcr0HasAvx512State(uint64_t xcr0)
+	{
+		return (xcr0 & XCR0_AVX512_STATE_MASK) == XCR0_AVX512_STATE_MASK;
+	}
+}
+
 
 class PlanarFrame
 {
 private:
-	bool useSIMD,useAVX;
+	bool useSIMD,useAVX,useAVX512;
 	int cpu;
 	int ypitch,uvpitch;
 	int ywidth,uvwidth;
@@ -89,6 +105,7 @@ public:
 	int GetHeight(uint8_t plane);
 	int GetPitch(uint8_t plane);
 	int getCPUFlags(void) {return cpu;}
+	void setAVX512(const bool enabled) {useAVX512=enabled;}
 	inline void BitBlt(uint8_t *dstp,int dst_pitch,const uint8_t *srcp,int src_pitch,int row_size,int height);
 	PlanarFrame& operator=(PlanarFrame &ob2);
 	void convYUY2to422(const uint8_t *src,uint8_t *py,uint8_t *pu,uint8_t *pv,int pitch1,int pitch2Y,int pitch2UV,

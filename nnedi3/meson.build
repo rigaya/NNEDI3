@@ -11,6 +11,20 @@ nnedi3_avx2_sources = [
   'nnedi3_intrinsic.h'
 ]
 
+nnedi3_avx512_sources = [
+  'nnedi3_intrinsic_AVX512.cpp',
+  'nnedi3_intrinsic_AVX512_extract.cpp',
+  'nnedi3_intrinsic_AVX512_pixel_convert.cpp',
+  'nnedi3_intrinsic_AVX512_prescreener.cpp',
+  'nnedi3_intrinsic_AVX512_process.cpp',
+]
+
+nnedi3_main_args = cpp_args
+if host_machine.system() == 'linux'
+  # Cバックエンドの演算順序を維持する
+  nnedi3_main_args += ['-ffp-contract=off']
+endif
+
 binary1_symbol_args = []
 
 # バイナリデータファイルのobjcopy処理
@@ -45,15 +59,28 @@ nnedi3_avx2_dep = declare_dependency(
   link_with: nnedi3_avx2_lib,
 )
 
+if host_machine.system() == 'linux'
+  nnedi3_avx512_lib = static_library('nnedi3_avx512',
+    nnedi3_avx512_sources,
+    include_directories : include_directories('.', './compat'),
+    cpp_args : cpp_args + ['-mavx512f', '-mavx512bw', '-mavx512dq', '-mavx512vl', '-mavx2', '-mfma'],
+    name_prefix : '',
+  )
+  nnedi3_avx512_dep = declare_dependency(link_with: nnedi3_avx512_lib)
+else
+  nnedi3_avx512_dep = declare_dependency()
+endif
+
 shared_module('libnnedi3',
   nnedi3_sources,
   include_directories : include_directories('.', './compat'),
-  dependencies : [avisynth_dep, nnedi3_avx2_dep] + (not (host_machine.system() == 'windows') ? [binary1_dep] : []),
-  cpp_args : cpp_args + binary1_symbol_args,
+  dependencies : [avisynth_dep, nnedi3_avx2_dep, nnedi3_avx512_dep] + (not (host_machine.system() == 'windows') ? [binary1_dep] : []),
+  cpp_args : nnedi3_main_args + binary1_symbol_args,
   link_args : link_args + (host_machine.system() == 'linux' ? [
     '-Wl,--no-undefined,-z,noexecstack',
     # AviSynth本体にも同名のThreadPoolがあるため、プラグイン内部参照を自身へ束縛する
     '-Wl,-Bsymbolic-functions',
+    '-Wl,--undefined=nnedi3_avx512_build_marker',
     '-Wl,--version-script=' + join_paths(meson.current_source_dir(), 'nnedi3_linux.map'),
   ] : []),
   link_depends : host_machine.system() == 'linux' ? files('nnedi3_linux.map') : [],

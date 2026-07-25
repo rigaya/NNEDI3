@@ -21,7 +21,10 @@
 **   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
-#include "./PlanarFrame.h"
+#include "PlanarFrame.h"
+#if !defined(_WIN32) || defined(_WIN64)
+#include "nnedi3_intrinsic_AVX512_pixel_convert.h"
+#endif
 #include <stdint.h>
 #if defined(_WIN32) || defined(_WIN64)
 #include <intrin.h>
@@ -49,9 +52,8 @@ extern "C" void conv422toYUY2_AVX(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *d
 
 #define IS_BIT_SET(bitfield, bit) ((bitfield) & (1<<(bit)) ? true : false)
 
-#if (defined(_WIN32) || defined(_WIN64))
-#define __xgetbv__ _xgetbv
-#else
+#if !defined(_WIN32) && !defined(_WIN64)
+// Linux—p‚ÌcpuidŽÀ‘•
 static void __cpuid(int cpuinfo[4], int leaf) {
   __asm__ __volatile__ (
     "cpuid"
@@ -60,6 +62,7 @@ static void __cpuid(int cpuinfo[4], int leaf) {
   );
 }
 
+// Linux—p‚ÌxgetbvŽÀ‘•
 static unsigned long long __xgetbv__(unsigned int index) {
   unsigned int eax, edx;
   __asm__ __volatile__ (
@@ -113,7 +116,7 @@ static int CPUCheckForExtensions()
 #else
     unsigned long long xgetbv0 = __xgetbv__(_XCR_XFEATURE_ENABLED_MASK);
 #endif
-    if ((xgetbv0 & 0x6ull) == 0x6ull) {
+    if (nnedi3_cpu_detail::Xcr0HasAvxState(xgetbv0)) {
       result |= CPUF_AVX;
       if (IS_BIT_SET(cpuinfo[2], 12))
         result |= CPUF_FMA3;
@@ -121,11 +124,10 @@ static int CPUCheckForExtensions()
       if (IS_BIT_SET(cpuinfo[1], 5))
         result |= CPUF_AVX2;
     }
-    if((xgetbv0 & (0x7ull << 5)) && // OPMASK: upper-256 enabled by OS
-       (xgetbv0 & (0x3ull << 1))) { // XMM/YMM enabled by OS
-      // Verify that XCR0[7:5] = ‘111b’ (OPMASK state, upper 256-bit of ZMM0-ZMM15 and
+    if (nnedi3_cpu_detail::Xcr0HasAvx512State(xgetbv0)) {
+      // Verify that XCR0[7:5] = E11bE(OPMASK state, upper 256-bit of ZMM0-ZMM15 and
       // ZMM16-ZMM31 state are enabled by OS)
-      /// and that XCR0[2:1] = ‘11b’ (XMM state and YMM state are enabled by OS).
+      /// and that XCR0[2:1] = E1bE(XMM state and YMM state are enabled by OS).
       __cpuid(cpuinfo, 7);
       if (IS_BIT_SET(cpuinfo[1], 16))
         result |= CPUF_AVX512F;
@@ -150,7 +152,7 @@ static int CPUCheckForExtensions()
 
   // 3DNow!, 3DNow!, ISSE, FMA4
   __cpuid(cpuinfo, 0x80000000);   
-  if (cpuinfo[0] >= 0x80000001)
+  if ((unsigned int)cpuinfo[0] >= 0x80000001)
   {
     __cpuid(cpuinfo, 0x80000001);
 
@@ -190,6 +192,7 @@ PlanarFrame::PlanarFrame(void)
 	planar_1 = planar_2 = planar_3 = planar_4 = NULL;
 	useSIMD = true;
 	useAVX = true;
+	useAVX512 = false;
 	cpu = CPUCheckForExtensions();
 	isRGBPfamily = false;
 	isAlphaChannel = false;
@@ -207,6 +210,7 @@ PlanarFrame::PlanarFrame(VideoInfo &viInfo)
 	planar_1 = planar_2 = planar_3 = planar_4 = NULL;
 	useSIMD = true;
 	useAVX = true;
+	useAVX512 = false;
 	cpu = CPUCheckForExtensions();
 	alloc_ok=allocSpace(viInfo);
 }
@@ -738,6 +742,7 @@ PlanarFrame& PlanarFrame::operator=(PlanarFrame &ob2)
 {
 	useSIMD = ob2.useSIMD;
 	useAVX = ob2.useAVX;
+	useAVX512 = ob2.useAVX512;
 	cpu = ob2.cpu;
 	ypitch = ob2.ypitch;
 	yheight = ob2.yheight;
@@ -759,6 +764,13 @@ PlanarFrame& PlanarFrame::operator=(PlanarFrame &ob2)
 void PlanarFrame::convYUY2to422(const uint8_t *src,uint8_t *py,uint8_t *pu,uint8_t *pv,int pitch1,int pitch2Y,int pitch2UV,
 	int width,int height)
 {
+#if !defined(_WIN32) || defined(_WIN64)
+	if (useAVX512)
+	{
+		convYUY2to422_AVX512(src,py,pu,pv,pitch1,pitch2Y,pitch2UV,width,height);
+		return;
+	}
+#endif
 #if defined(_WIN32) || defined(_WIN64)
 	if (((cpu&CPUF_AVX)!=0) && useAVX && (((size_t(src)|pitch1)&15)==0))
 		convYUY2to422_AVX(src,py,pu,pv,pitch1,pitch2Y,pitch2UV,(width+7)>>3,height);
@@ -820,6 +832,13 @@ void PlanarFrame::convYUY2to422(const uint8_t *src,uint8_t *py,uint8_t *pu,uint8
 void PlanarFrame::conv422toYUY2(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *dst,int pitch1Y,int pitch1UV,int pitch2,
 	int width,int height)
 {
+#if !defined(_WIN32) || defined(_WIN64)
+	if (useAVX512)
+	{
+		conv422toYUY2_AVX512(py,pu,pv,dst,pitch1Y,pitch1UV,pitch2,width,height);
+		return;
+	}
+#endif
 #if defined(_WIN32) || defined(_WIN64)
 	const int w_8=(width+7)>>3;
 	const int modulo2=pitch2-(w_8 << 4);
@@ -882,6 +901,13 @@ void PlanarFrame::conv422toYUY2(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *dst
 void PlanarFrame::convRGB24to444(const uint8_t *src,uint8_t *py,uint8_t *pu,uint8_t *pv,int pitch1,int pitch2Y,int pitch2UV,
 	int width,int height)
 {
+#if !defined(_WIN32) || defined(_WIN64)
+	if (useAVX512)
+	{
+		convRGB24to444_AVX512(src,py,pu,pv,pitch1,pitch2Y,pitch2UV,width,height);
+		return;
+	}
+#endif
 	for (int y=0; y<height; ++y)
 	{
 		int x_3=0;
@@ -904,6 +930,13 @@ void PlanarFrame::convRGB24to444(const uint8_t *src,uint8_t *py,uint8_t *pu,uint
 void PlanarFrame::conv444toRGB24(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *dst,int pitch1Y,int pitch1UV,int pitch2,
 	int width,int height)
 {
+#if !defined(_WIN32) || defined(_WIN64)
+	if (useAVX512)
+	{
+		conv444toRGB24_AVX512(py,pu,pv,dst,pitch1Y,pitch1UV,pitch2,width,height);
+		return;
+	}
+#endif
 	dst += (height-1)*pitch2;
 	for (int y=0; y<height; ++y)
 	{

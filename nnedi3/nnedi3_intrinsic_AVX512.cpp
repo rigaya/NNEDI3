@@ -1,0 +1,301 @@
+﻿#include "nnedi3_intrinsic_AVX512.h"
+
+#include <immintrin.h>
+
+#include <cstddef>
+
+namespace {
+
+float horizontalSum16(const __m512 value)
+{
+    // 縮約順をコンパイラ任せにせず、両OSで同じ加算木を使用する。
+    const __m256 sum8 = _mm256_add_ps(
+        _mm512_castps512_ps256(value), _mm512_extractf32x8_ps(value, 1));
+    __m128 sum4 = _mm_add_ps(
+        _mm256_castps256_ps128(sum8), _mm256_extractf128_ps(sum8, 1));
+    sum4 = _mm_hadd_ps(sum4, sum4);
+    sum4 = _mm_hadd_ps(sum4, sum4);
+    return _mm_cvtss_f32(sum4);
+}
+
+std::int32_t horizontalSum16xInt32(const __m512i value)
+{
+    // VPADDDと同じ32bit wrap加算だけで縮約し、AVX2版の整数値を保つ。
+    const __m256i sum8 = _mm256_add_epi32(
+        _mm512_castsi512_si256(value), _mm512_extracti64x4_epi64(value, 1));
+    __m128i sum4 = _mm_add_epi32(
+        _mm256_castsi256_si128(sum8), _mm256_extracti128_si256(sum8, 1));
+    sum4 = _mm_add_epi32(sum4, _mm_shuffle_epi32(sum4, 0x4e));
+    sum4 = _mm_add_epi32(sum4, _mm_shuffle_epi32(sum4, 0xb1));
+    return _mm_cvtsi128_si32(sum4);
+}
+
+void dotProdFloatAVX512(const float* data, const float* weights,
+    float* vals, const int n, const int len, const float* istd)
+{
+    const float* const bias = weights + static_cast<std::size_t>(n) * len;
+    const __m128 inverseStdDev = _mm_set1_ps(*istd);
+
+    for (int neuron = 0; neuron < n; neuron += 4) {
+        const float* const groupWeights = weights
+            + static_cast<std::size_t>(neuron) * len;
+        __m512 sums0 = _mm512_setzero_ps();
+        __m512 sums1 = _mm512_setzero_ps();
+        __m512 sums2 = _mm512_setzero_ps();
+        __m512 sums3 = _mm512_setzero_ps();
+
+        for (int input = 0; input < len; input += 16) {
+            const __m512 values = _mm512_loadu_ps(data + input);
+            const float* const tile = groupWeights
+                + static_cast<std::size_t>(input) * 4;
+            sums0 = _mm512_fmadd_ps(values, _mm512_loadu_ps(tile), sums0);
+            sums1 = _mm512_fmadd_ps(values, _mm512_loadu_ps(tile + 16), sums1);
+            sums2 = _mm512_fmadd_ps(values, _mm512_loadu_ps(tile + 32), sums2);
+            sums3 = _mm512_fmadd_ps(values, _mm512_loadu_ps(tile + 48), sums3);
+        }
+
+        const __m128 dotProducts = _mm_setr_ps(
+            horizontalSum16(sums0), horizontalSum16(sums1),
+            horizontalSum16(sums2), horizontalSum16(sums3));
+        const __m128 result = _mm_fmadd_ps(
+            dotProducts, inverseStdDev, _mm_loadu_ps(bias + neuron));
+        _mm_storeu_ps(vals + neuron, result);
+    }
+}
+
+void dotProdInt16AVX512(const float* dataRaw, const float* weightsRaw,
+    float* vals, const int n, const int len, const float* istd)
+{
+    const auto* const data = reinterpret_cast<const std::int16_t*>(dataRaw);
+    const auto* const weights = reinterpret_cast<const std::int16_t*>(weightsRaw);
+    const auto* const scaleBias = reinterpret_cast<const float*>(
+        weights + static_cast<std::size_t>(n) * len);
+    const __m128 inverseStdDev = _mm_set1_ps(*istd);
+    const int fullLength = len & ~31;
+    const int tailLength = len - fullLength;
+
+    for (int neuron = 0; neuron < n; neuron += 4) {
+        const std::int16_t* const groupWeights = weights
+            + static_cast<std::size_t>(neuron) * len;
+        __m512i sums0 = _mm512_setzero_si512();
+        __m512i sums1 = _mm512_setzero_si512();
+        __m512i sums2 = _mm512_setzero_si512();
+        __m512i sums3 = _mm512_setzero_si512();
+
+        for (int input = 0; input < fullLength; input += 32) {
+            const __m512i values = _mm512_loadu_si512(data + input);
+            const std::int16_t* const tile = groupWeights
+                + static_cast<std::size_t>(input) * 4;
+            sums0 = _mm512_add_epi32(sums0,
+                _mm512_madd_epi16(values, _mm512_loadu_si512(tile)));
+            sums1 = _mm512_add_epi32(sums1,
+                _mm512_madd_epi16(values, _mm512_loadu_si512(tile + 32)));
+            sums2 = _mm512_add_epi32(sums2,
+                _mm512_madd_epi16(values, _mm512_loadu_si512(tile + 64)));
+            sums3 = _mm512_add_epi32(sums3,
+                _mm512_madd_epi16(values, _mm512_loadu_si512(tile + 96)));
+        }
+
+        if (tailLength != 0) {
+            const __mmask32 tailMask = static_cast<__mmask32>(
+                (UINT32_C(1) << tailLength) - UINT32_C(1));
+            const __m512i values = _mm512_maskz_loadu_epi16(
+                tailMask, data + fullLength);
+            const std::int16_t* const tile = groupWeights
+                + static_cast<std::size_t>(fullLength) * 4;
+            sums0 = _mm512_add_epi32(sums0, _mm512_madd_epi16(values,
+                _mm512_maskz_loadu_epi16(tailMask, tile)));
+            sums1 = _mm512_add_epi32(sums1, _mm512_madd_epi16(values,
+                _mm512_maskz_loadu_epi16(tailMask, tile + tailLength)));
+            sums2 = _mm512_add_epi32(sums2, _mm512_madd_epi16(values,
+                _mm512_maskz_loadu_epi16(tailMask, tile + 2 * tailLength)));
+            sums3 = _mm512_add_epi32(sums3, _mm512_madd_epi16(values,
+                _mm512_maskz_loadu_epi16(tailMask, tile + 3 * tailLength)));
+        }
+
+        const __m128i integerSums = _mm_setr_epi32(
+            horizontalSum16xInt32(sums0), horizontalSum16xInt32(sums1),
+            horizontalSum16xInt32(sums2), horizontalSum16xInt32(sums3));
+        const __m128 converted = _mm_cvtepi32_ps(integerSums);
+        const float* const groupScaleBias
+            = scaleBias + static_cast<std::size_t>(neuron / 4) * 8;
+        // scale乗算の丸め後、istd乗算とbias加算をFMAへ融合する。
+        const __m128 scaled = _mm_mul_ps(converted, _mm_loadu_ps(groupScaleBias));
+        const __m128 result = _mm_fmadd_ps(
+            scaled, inverseStdDev, _mm_loadu_ps(groupScaleBias + 4));
+        _mm_storeu_ps(vals + neuron, result);
+    }
+}
+
+__m512 clampExpInput(const __m512 value)
+{
+    return _mm512_max_ps(
+        _mm512_min_ps(value, _mm512_set1_ps(80.0f)),
+        _mm512_set1_ps(-80.0f));
+}
+
+void expApprox0AVX512(float* values, const int n)
+{
+    const __m512 multiplier = _mm512_set1_ps(12102203.161561486f);
+    const __m512 bias = _mm512_set1_ps(1064866805.0f);
+    for (int i = 0; i < n; i += 16) {
+        const __m512 value = clampExpInput(_mm512_loadu_ps(values + i));
+        const __m512 encoded = _mm512_fmadd_ps(value, multiplier, bias);
+        _mm512_storeu_ps(values + i,
+            _mm512_castsi512_ps(_mm512_cvtps_epi32(encoded)));
+    }
+}
+
+void expApprox1AVX512(float* values, const int n)
+{
+    const __m512 scale = _mm512_set1_ps(1.4426950409f);
+    const __m512 magicBias = _mm512_set1_ps(12582912.0f);
+    const __m512 c0 = _mm512_set1_ps(1.00035f);
+    const __m512 c1 = _mm512_set1_ps(0.701277797f);
+    const __m512 c2 = _mm512_set1_ps(0.237348593f);
+    for (int i = 0; i < n; i += 16) {
+        const __m512 value = clampExpInput(_mm512_loadu_ps(values + i));
+        const __m512 biased = _mm512_fmadd_ps(value, scale, magicBias);
+        const __m512 exponentValue = _mm512_sub_ps(biased, magicBias);
+        const __m512 fraction = _mm512_fmsub_ps(value, scale, exponentValue);
+        const __m512 square = _mm512_mul_ps(fraction, fraction);
+        const __m512 linear = _mm512_fmadd_ps(c1, fraction, c0);
+        const __m512 polynomial = _mm512_fmadd_ps(c2, square, linear);
+        const __m512i exponentBits = _mm512_slli_epi32(
+            _mm512_castps_si512(biased), 23);
+        _mm512_storeu_ps(values + i, _mm512_castsi512_ps(
+            _mm512_add_epi32(_mm512_castps_si512(polynomial), exponentBits)));
+    }
+}
+
+void expApprox2AVX512(float* values, const int n)
+{
+    const __m512 reciprocalLn2 = _mm512_set1_ps(1.442695041f);
+    const __m512 half = _mm512_set1_ps(0.5f);
+    const __m512 c2 = _mm512_set1_ps(1.428606820e-6f);
+    const __m512 c1 = _mm512_set1_ps(6.931457520e-1f);
+    const __m512 q0 = _mm512_set1_ps(3.001985051e-6f);
+    const __m512 p0 = _mm512_set1_ps(1.261771931e-4f);
+    const __m512 q1 = _mm512_set1_ps(2.524483403e-3f);
+    const __m512 p1 = _mm512_set1_ps(3.029944077e-2f);
+    const __m512 q2 = _mm512_set1_ps(2.272655482e-1f);
+    const __m512 q3 = _mm512_set1_ps(2.0f);
+    const __m512 zero = _mm512_setzero_ps();
+    const __m512 one = _mm512_set1_ps(1.0f);
+    const __m512 two = _mm512_set1_ps(2.0f);
+    const __m512i oneInt = _mm512_set1_epi32(1);
+    const __m512i exponentBias = _mm512_set1_epi32(0x7f);
+
+    for (int i = 0; i < n; i += 16) {
+        __m512 value = clampExpInput(_mm512_loadu_ps(values + i));
+        const __m512 roundedInput = _mm512_fmadd_ps(
+            value, reciprocalLn2, half);
+        const __mmask16 correctionMask = _mm512_cmp_ps_mask(
+            zero, roundedInput, _CMP_NLT_US);
+        __m512i exponent = _mm512_cvttps_epi32(roundedInput);
+        exponent = _mm512_sub_epi32(exponent,
+            _mm512_maskz_mov_epi32(correctionMask, oneInt));
+        const __m512 exponentFloat = _mm512_cvtepi32_ps(exponent);
+        value = _mm512_fnmadd_ps(exponentFloat, c2, value);
+        value = _mm512_fnmadd_ps(exponentFloat, c1, value);
+
+        const __m512 square = _mm512_mul_ps(value, value);
+        __m512 denominator = _mm512_fmadd_ps(q0, square, q1);
+        __m512 numerator = _mm512_fmadd_ps(p0, square, p1);
+        denominator = _mm512_fmadd_ps(denominator, square, q2);
+        numerator = _mm512_mul_ps(numerator, square);
+        denominator = _mm512_fmadd_ps(denominator, square, q3);
+        numerator = _mm512_fmadd_ps(numerator, value, value);
+        denominator = _mm512_sub_ps(denominator, numerator);
+        const __m512 ratio = _mm512_div_ps(numerator, denominator);
+        const __m512 approximation = _mm512_fmadd_ps(ratio, two, one);
+        const __m512i scaleBits = _mm512_slli_epi32(
+            _mm512_add_epi32(exponent, exponentBias), 23);
+        _mm512_storeu_ps(values + i, _mm512_mul_ps(
+            approximation, _mm512_castsi512_ps(scaleBits)));
+    }
+}
+
+void weightedAverageAVX512(const float* weights, const int n, float* mstd)
+{
+    const float* const outputs = weights + n;
+    const __m512 absoluteMask = _mm512_castsi512_ps(
+        _mm512_set1_epi32(0x7fffffff));
+    const __m512 one = _mm512_set1_ps(1.0f);
+    __m512 weightSum = _mm512_setzero_ps();
+    __m512 valueSum = _mm512_setzero_ps();
+
+    for (int i = 0; i < n; i += 16) {
+        const __m512 weight = _mm512_loadu_ps(weights + i);
+        const __m512 output = _mm512_loadu_ps(outputs + i);
+        const __m512 denominator = _mm512_add_ps(
+            _mm512_and_ps(output, absoluteMask), one);
+        const __m512 elliott = _mm512_div_ps(output, denominator);
+        weightSum = _mm512_add_ps(weightSum, weight);
+        valueSum = _mm512_fmadd_ps(weight, elliott, valueSum);
+    }
+
+    const float weightTotal = horizontalSum16(weightSum);
+    const float valueTotal = horizontalSum16(valueSum);
+    float normalized = 0.0f;
+    if (weightTotal > 1.0e-10f) {
+        normalized = _mm_cvtss_f32(_mm_div_ss(
+            _mm_set_ss(5.0f * valueTotal), _mm_set_ss(weightTotal)));
+    }
+    const __m128 centered = _mm_fmadd_ss(
+        _mm_set_ss(normalized), _mm_set_ss(mstd[1]), _mm_set_ss(mstd[0]));
+    mstd[3] += _mm_cvtss_f32(centered);
+}
+
+} // 無名名前空間
+
+extern "C" std::uint32_t nnedi3_avx512_build_marker() noexcept
+{
+    // 非対応CPUでも安全に参照できるよう、このmarkerにはAVX-512命令を含めない。
+    return UINT32_C(0x41565835);
+}
+
+extern "C" void dotProd_m32_m16_AVX512(const float* data, const float* weights,
+    float* vals, const int n, const int len, const float* istd)
+{
+    dotProdFloatAVX512(data, weights, vals, n, len, istd);
+}
+
+extern "C" void dotProd_m48_m16_AVX512(const float* data, const float* weights,
+    float* vals, const int n, const int len, const float* istd)
+{
+    dotProdFloatAVX512(data, weights, vals, n, len, istd);
+}
+
+extern "C" void dotProd_m32_m16_i16_AVX512(const float* data, const float* weights,
+    float* vals, const int n, const int len, const float* istd)
+{
+    dotProdInt16AVX512(data, weights, vals, n, len, istd);
+}
+
+extern "C" void dotProd_m48_m16_i16_AVX512(const float* data, const float* weights,
+    float* vals, const int n, const int len, const float* istd)
+{
+    dotProdInt16AVX512(data, weights, vals, n, len, istd);
+}
+
+extern "C" void e0_m16_AVX512(float* values, const int n)
+{
+    expApprox0AVX512(values, n);
+}
+
+extern "C" void e1_m16_AVX512(float* values, const int n)
+{
+    expApprox1AVX512(values, n);
+}
+
+extern "C" void e2_m16_AVX512(float* values, const int n)
+{
+    expApprox2AVX512(values, n);
+}
+
+extern "C" void weightedAvgElliottMul5_m16_AVX512(
+    const float* weights, const int n, float* mstd)
+{
+    weightedAverageAVX512(weights, n, mstd);
+}

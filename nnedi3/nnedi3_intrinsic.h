@@ -22,6 +22,11 @@ void e0_m16_FMA3(float* values, int n);
 void e1_m16_AVX2(float* values, int n);
 void e2_m16_AVX2(float* values, int n);
 
+void castScale_FMA3(const float* values, const float* scale, uint8_t* dst,
+    uint32_t minimum, uint32_t maximum);
+void castScale_FMA3_16(const float* values, const float* scale, uint16_t* dst,
+    uint32_t minimum, uint32_t maximum);
+
 int processLine0_AVX2_ASM(const uint8_t* mask, int width, uint8_t* dst, const uint8_t* src, int src_pitch, const uint16_t* min_max);
 int processLine0_AVX2_ASM_16(const uint8_t* mask, int width, uint8_t* dst, const uint8_t* src, int src_pitch, const uint16_t* min_max);
 int processLine0_AVX2_ASM_32(const uint8_t* mask, int width, uint8_t* dst, const uint8_t* src, int src_pitch);
