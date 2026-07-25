@@ -47,6 +47,7 @@
 
 
 #include "./avisynth.h"
+#include <string.h>
 
 
 

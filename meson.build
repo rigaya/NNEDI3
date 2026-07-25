@@ -34,7 +34,7 @@ sse2_args = cpp_args + ['-msse2']
 ssse3_args = cpp_args + ['-mssse3']
 sse41_args = cpp_args + ['-msse4.1']
 avx_args = cpp_args + ['-mavx', '-mpopcnt']
-avx2_args = cpp_args + ['-mavx2', '-mfma', '-mpopcnt', '-mbmi', '-mbmi2']
+avx2_args = cpp_args + ['-mavx2', '-mfma']
 avx512_args = cpp_args + ['-mavx512f', '-mavx512bw', '-mpopcnt', '-mbmi', '-mbmi2']
 
 subdir('nnedi3')

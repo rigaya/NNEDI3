@@ -379,6 +379,7 @@
     <ClInclude Include="avisynth.h" />
     <ClInclude Include="internal.h" />
     <ClInclude Include="nnedi3.h" />
+    <ClInclude Include="nnedi3_intrinsic.h" />
     <ClInclude Include="PlanarFrame.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="ThreadPool.h" />

@@ -21,6 +21,8 @@
 */
 
 #include "./nnedi3.h"
+#include "nnedi3_intrinsic.h"
+#include <cstring>
 
 #if defined(_WIN32) || defined(_WIN64)
 #define ENABLE_SSE2 1
@@ -29,7 +31,18 @@
 #else
 #define ENABLE_SSE2 0
 #define ENABLE_AVX 0
-#define ENABLE_AVX2 0
+#define ENABLE_AVX2 1
+#endif
+
+#if !(defined(_WIN32) || defined(_WIN64))
+#define computeNetwork0_AVX2 computeNetwork0_FMA3
+#define dotProd_m32_m16_AVX2 dotProd_m32_m16_FMA3
+#define dotProd_m48_m16_AVX2 dotProd_m48_m16_FMA3
+#define e0_m16_AVX2 e0_m16_FMA3
+#define weightedAvgElliottMul5_m16_AVX2 weightedAvgElliottMul5_m16_FMA3
+#define extract_m8_AVX2 extract_m8_FMA3
+#define extract_m8_AVX2_16 extract_m8_FMA3_16
+#define extract_m8_AVX2_32 extract_m8_FMA3_32
 #endif
 
 #if ENABLE_SSE2
@@ -208,6 +221,41 @@ extern char _binary____nnedi3_binary1_bin_end[];
 #define mydelete(ptr) if (ptr!=NULL) { delete ptr; ptr=NULL;}
 
 static ThreadPoolInterface *poolInterface;
+
+static constexpr bool usesSIMDWeightLayout(const int opt)
+{
+	return opt > 1;
+}
+
+static constexpr bool usesAVX2WeightLayout(const int opt)
+{
+	return opt >= 5;
+}
+
+static constexpr bool usesAVX2NewPrescreenerWeightLayout(const int opt, const int bitsPerPixel)
+{
+	return usesAVX2WeightLayout(opt) && bitsPerPixel <= 14;
+}
+
+#if !(defined(_WIN32) || defined(_WIN64))
+static constexpr int normalizeLinuxOpt(const int requestedOpt, const int cpuFlags)
+{
+	const bool hasAVX2FMA3 = (cpuFlags & CPUF_AVX2) != 0 && (cpuFlags & CPUF_FMA3) != 0;
+
+	if (requestedOpt == 0 || requestedOpt >= 5)
+		return hasAVX2FMA3 ? 6 : 1;
+	return 1;
+}
+
+static_assert(normalizeLinuxOpt(0, CPUF_AVX2 | CPUF_FMA3) == 6, "Linux auto selection must choose AVX2+FMA3");
+static_assert(normalizeLinuxOpt(0, CPUF_AVX2) == 1, "Linux must not choose AVX2 without FMA3");
+static_assert(normalizeLinuxOpt(4, CPUF_AVX2 | CPUF_FMA3) == 1, "Linux opt=2,3,4 must use C");
+static_assert(normalizeLinuxOpt(5, CPUF_AVX2 | CPUF_FMA3) == 6, "Linux opt=5 must normalize to AVX2+FMA3");
+static_assert(normalizeLinuxOpt(7, CPUF_FMA3) == 1, "Linux must not choose FMA3 without AVX2");
+static_assert(!usesSIMDWeightLayout(normalizeLinuxOpt(3, CPUF_AVX2 | CPUF_FMA3)), "C requires neuron-major weights");
+static_assert(usesAVX2WeightLayout(normalizeLinuxOpt(6, CPUF_AVX2 | CPUF_FMA3)), "AVX2+FMA3 requires AVX2 weight layout");
+static_assert(!usesAVX2NewPrescreenerWeightLayout(normalizeLinuxOpt(6, CPUF_AVX2 | CPUF_FMA3), 15), "15/16-bit C prescreener requires C weight layout");
+#endif
 
 int roundds(const double f)
 {
@@ -472,6 +520,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 		env->ThrowError("nnedi3: Error while allocating planar dstPF!");
 	}
 
+#if defined(_WIN32) || defined(_WIN64)
 	if (opt==0)
 	{
 		const int CPUF=env->GetCPUFlags();
@@ -495,12 +544,13 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			}
 		}
 
-#if (defined(_WIN32) || defined(_WIN64))
 		char buf[512];
 		sprintf_s(buf,512,"nnedi3: auto-detected opt setting = %d (%d)\n",opt,CPUF);
 		OutputDebugString(buf);
-#endif
 	}
+#else
+	opt=normalizeLinuxOpt(opt,env->GetCPUFlags());
+#endif
 
 	const int dims0 = 49*4+5*4+9*4;
 	const int dims0new = 4*65+4*5;
@@ -588,7 +638,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 
 		j_a=0,j_b=0;
-		if (opt>=5)
+		if (usesAVX2NewPrescreenerWeightLayout(opt,bits_per_pixel))
 		{
 			for (int j=0; j<4; j++)
 			{
@@ -696,7 +746,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			}
 			memcpy(wf+4,bdata+4*48,(dims0-4*48)*sizeof(float));
 
-			if ((opt>1) && (bits_per_pixel<=14))// shuffle weight order for asm
+			if (usesSIMDWeightLayout(opt) && (bits_per_pixel<=14))// shuffle weight order for asm
 			{
 				int16_t *rs = (int16_t*)malloc(dims0*sizeof(float));
 
@@ -710,7 +760,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 				memcpy(rs,weights0,dims0*sizeof(float));
 				j_a=0;
-				if (opt>=5)
+				if (usesAVX2WeightLayout(opt))
 				{
 					for (int j=0; j<4; j++)
 					{
@@ -752,7 +802,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			}
 			memcpy(weights0+4*48,bdata+4*48,(dims0-4*48)*sizeof(float));
 
-			if (opt>1) // shuffle weight order for asm
+			if (usesSIMDWeightLayout(opt)) // shuffle weight order for asm
 			{
 				float *wf = weights0;
 				float *rf = (float*)malloc(dims0*sizeof(float));
@@ -766,7 +816,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 				memcpy(rf,weights0,dims0*sizeof(float));
 				j_a=0;
-				if (opt>=5)
+				if (usesAVX2WeightLayout(opt))
 				{
 					for (int j=0; j<4; j++)
 					{
@@ -881,7 +931,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 				j_d++;
 			}
 
-			if ((opt>1) && (bits_per_pixel<=14)) // shuffle weight order for asm
+			if (usesSIMDWeightLayout(opt) && (bits_per_pixel<=14)) // shuffle weight order for asm
 			{
 				int16_t *rs = (int16_t *)malloc(nnst2*asize*sizeof(int16_t));
 				if (rs==NULL)
@@ -894,7 +944,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 
 				memcpy(rs,ws,nnst2*asize*sizeof(int16_t));
 				j_a=0;
-				if (opt>=5)
+				if (usesAVX2WeightLayout(opt))
 				{
 					for (int j=0; j<nnst2; j++)
 					{
@@ -928,9 +978,9 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 			j_a=0;
 			j_d=asize+1;
 
-			if (opt>1) // shuffle weight order for asm
+			if (usesSIMDWeightLayout(opt)) // shuffle weight order for asm
 			{
-				if (opt>=5)
+				if (usesAVX2WeightLayout(opt))
 				{
 					for (int j=0; j<nnst2; j++)
 					{
@@ -1764,7 +1814,7 @@ void computeNetwork0new_C(const float *datai, const float *weights, uint8_t *d)
 		if (vals[4 + i]>0.0f)
 			mask |= (0x1 << (i << 3));
 	}
-	*((int*)d) = mask;
+	std::memcpy(d,&mask,sizeof(mask));
 }
 
 
@@ -2080,7 +2130,7 @@ void computeNetwork0new_C_16(const float *datai, const float *weights, uint8_t *
 		if (vals[4+i]>0.0f)
 			mask |= (0x1 << (i<<3));
 	}
-	*((int*)d) = mask;
+	std::memcpy(d,&mask,sizeof(mask));
 }
 
 
@@ -2543,8 +2593,8 @@ void e0_m16_C(float *s,const int n)
 {
 	for (int i=0; i<n; i++)
 	{
-		const int t = (int)(std::max(std::min(s[i],exp_hi[0]),exp_lo[0])*e0_mult[0]+e0_bias[0]);
-		s[i] = (*((float*)&t));
+		const uint32_t bits = (uint32_t)(std::max(std::min(s[i],exp_hi[0]),exp_lo[0])*e0_mult[0]+e0_bias[0]);
+		std::memcpy(&s[i],&bits,sizeof(bits));
 	}
 }
 
@@ -2563,11 +2613,13 @@ void e1_m16_C(float *s,const int n)
 	for (int q=0; q<n; q++)
 	{
 		float x = std::max(std::min(s[q],exp_hi[0]),exp_lo[0])*e1_scale[0];
-		int i = (int)(x + 128.5f) - 128;
-		x -= i;
+		int exponent = (int)(x + 128.5f) - 128;
+		x -= exponent;
 		x = e1_c0[0] + e1_c1[0]*x + e1_c2[0]*x*x;
-		i = (i+127)<<23;
-		s[q] = x * *((float*)&i);
+		const uint32_t bits = (uint32_t)(exponent+127)<<23;
+		float scale;
+		std::memcpy(&scale,&bits,sizeof(bits));
+		s[q] = x * scale;
 	}
 }
 
