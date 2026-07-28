@@ -231,6 +231,20 @@ void extract_m8_i16_AVX512(const std::uint8_t* const src, const int stride,
     const __m512i ones = _mm512_set1_epi16(1);
     __m512i sum = _mm512_setzero_si512();
     __m512i sumsq = _mm512_setzero_si512();
+    if (xdia == 32 && ydia == 4) {
+        for (int y = 0; y < 4; ++y) {
+            const std::uint8_t* const row = src
+                + static_cast<std::ptrdiff_t>(y) * stride * 2;
+            const __m512i words = _mm512_cvtepu8_epi16(
+                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row)));
+            _mm512_storeu_si512(input + y * 32, words);
+            sum = _mm512_add_epi32(sum, _mm512_madd_epi16(words, ones));
+            sumsq = _mm512_add_epi32(sumsq, _mm512_madd_epi16(words, words));
+        }
+        finishInt32Statistics(sum, sumsq, 128, mstd);
+        _mm256_zeroupper();
+        return;
+    }
     for (int y = 0; y < ydia; ++y) {
         const std::uint8_t* const row = src + static_cast<std::ptrdiff_t>(y) * stride * 2;
         std::uint16_t* const output = input + y * xdia;

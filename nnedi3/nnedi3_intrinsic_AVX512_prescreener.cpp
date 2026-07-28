@@ -1,10 +1,17 @@
 #include "nnedi3_intrinsic_AVX512_prescreener.h"
+#include "nnedi3_intrinsic_AVX512.h"
 
 #include <immintrin.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+
+#if defined(__GNUC__) || defined(__clang__)
+#define NNEDI3_AVX512VNNI_TARGET __attribute__((target("avx512vnni")))
+#else
+#define NNEDI3_AVX512VNNI_TARGET
+#endif
 
 namespace {
 
@@ -32,6 +39,32 @@ std::int32_t horizontalSum16xInt32(const __m512i value)
     sum4 = _mm_add_epi32(sum4, _mm_shuffle_epi32(sum4, 0x4e));
     sum4 = _mm_add_epi32(sum4, _mm_shuffle_epi32(sum4, 0xb1));
     return _mm_cvtsi128_si32(sum4);
+}
+
+__m128i horizontalSum4x16Int32(const __m512i sums0, const __m512i sums1,
+    const __m512i sums2, const __m512i sums3)
+{
+    __m256i sum0 = _mm256_add_epi32(
+        _mm512_castsi512_si256(sums0), _mm512_extracti64x4_epi64(sums0, 1));
+    __m256i sum1 = _mm256_add_epi32(
+        _mm512_castsi512_si256(sums1), _mm512_extracti64x4_epi64(sums1, 1));
+    __m256i sum2 = _mm256_add_epi32(
+        _mm512_castsi512_si256(sums2), _mm512_extracti64x4_epi64(sums2, 1));
+    __m256i sum3 = _mm256_add_epi32(
+        _mm512_castsi512_si256(sums3), _mm512_extracti64x4_epi64(sums3, 1));
+    const __m256i high01 = _mm256_unpackhi_epi64(sum0, sum1);
+    const __m256i high23 = _mm256_unpackhi_epi64(sum2, sum3);
+    sum0 = _mm256_add_epi32(_mm256_unpacklo_epi64(sum0, sum1), high01);
+    sum2 = _mm256_add_epi32(_mm256_unpacklo_epi64(sum2, sum3), high23);
+    const __m128i pair01 = _mm_add_epi32(
+        _mm256_castsi256_si128(sum0), _mm256_extracti128_si256(sum0, 1));
+    const __m128i pair23 = _mm_add_epi32(
+        _mm256_castsi256_si128(sum2), _mm256_extracti128_si256(sum2, 1));
+    return _mm_add_epi32(
+        _mm_castps_si128(_mm_shuffle_ps(
+            _mm_castsi128_ps(pair01), _mm_castsi128_ps(pair23), 0x88)),
+        _mm_castps_si128(_mm_shuffle_ps(
+            _mm_castsi128_ps(pair01), _mm_castsi128_ps(pair23), 0xdd)));
 }
 
 __m128 elliott(const __m128 value)
@@ -148,6 +181,90 @@ __m128 dotProductInt16(const std::int16_t* input, const std::int16_t* weights,
         horizontalSum16xInt32(sums3)));
 }
 
+NNEDI3_AVX512VNNI_TARGET
+__m128 dotProductInt16VNNI64(const std::int16_t* input,
+    const std::int16_t* weights)
+{
+    const __m512i values0 = _mm512_loadu_si512(input);
+    const __m512i values1 = _mm512_loadu_si512(input + 32);
+    __m512i sums0 = _mm512_setzero_si512();
+    __m512i sums1 = _mm512_setzero_si512();
+    __m512i sums2 = _mm512_setzero_si512();
+    __m512i sums3 = _mm512_setzero_si512();
+    sums0 = _mm512_dpwssd_epi32(sums0, values0, _mm512_loadu_si512(weights));
+    sums1 = _mm512_dpwssd_epi32(sums1, values0, _mm512_loadu_si512(weights + 32));
+    sums2 = _mm512_dpwssd_epi32(sums2, values0, _mm512_loadu_si512(weights + 64));
+    sums3 = _mm512_dpwssd_epi32(sums3, values0, _mm512_loadu_si512(weights + 96));
+    sums0 = _mm512_dpwssd_epi32(sums0, values1, _mm512_loadu_si512(weights + 128));
+    sums1 = _mm512_dpwssd_epi32(sums1, values1, _mm512_loadu_si512(weights + 160));
+    sums2 = _mm512_dpwssd_epi32(sums2, values1, _mm512_loadu_si512(weights + 192));
+    sums3 = _mm512_dpwssd_epi32(sums3, values1, _mm512_loadu_si512(weights + 224));
+    return _mm_cvtepi32_ps(horizontalSum4x16Int32(
+        sums0, sums1, sums2, sums3));
+}
+
+NNEDI3_AVX512VNNI_TARGET
+__m128 dotProductInt16VNNI48(const std::int16_t* input,
+    const std::int16_t* weights)
+{
+    constexpr __mmask32 tailMask = 0x0000ffff;
+    const __m512i values0 = _mm512_loadu_si512(input);
+    const __m512i values1 = _mm512_maskz_loadu_epi16(tailMask, input + 32);
+    __m512i sums0 = _mm512_setzero_si512();
+    __m512i sums1 = _mm512_setzero_si512();
+    __m512i sums2 = _mm512_setzero_si512();
+    __m512i sums3 = _mm512_setzero_si512();
+    sums0 = _mm512_dpwssd_epi32(sums0, values0, _mm512_loadu_si512(weights));
+    sums1 = _mm512_dpwssd_epi32(sums1, values0, _mm512_loadu_si512(weights + 32));
+    sums2 = _mm512_dpwssd_epi32(sums2, values0, _mm512_loadu_si512(weights + 64));
+    sums3 = _mm512_dpwssd_epi32(sums3, values0, _mm512_loadu_si512(weights + 96));
+    sums0 = _mm512_dpwssd_epi32(sums0, values1,
+        _mm512_maskz_loadu_epi16(tailMask, weights + 128));
+    sums1 = _mm512_dpwssd_epi32(sums1, values1,
+        _mm512_maskz_loadu_epi16(tailMask, weights + 144));
+    sums2 = _mm512_dpwssd_epi32(sums2, values1,
+        _mm512_maskz_loadu_epi16(tailMask, weights + 160));
+    sums3 = _mm512_dpwssd_epi32(sums3, values1,
+        _mm512_maskz_loadu_epi16(tailMask, weights + 176));
+    return _mm_cvtepi32_ps(horizontalSum4x16Int32(
+        sums0, sums1, sums2, sums3));
+}
+
+NNEDI3_AVX512VNNI_TARGET
+void computeNetwork0i16VNNI(const float* inputRaw, const float* weightsRaw,
+    std::uint8_t* result)
+{
+    const auto* input = reinterpret_cast<const std::int16_t*>(inputRaw);
+    const auto* weights = reinterpret_cast<const std::int16_t*>(weightsRaw);
+    const float* const floatWeights = reinterpret_cast<const float*>(weights + 192);
+    const __m128 converted = dotProductInt16VNNI48(input, weights);
+    const __m128 firstLayer = _mm_fmadd_ps(converted,
+        _mm_loadu_ps(floatWeights), _mm_loadu_ps(floatWeights + 4));
+    *result = evaluateOldNetworkTail(firstLayer, floatWeights + 8,
+        floatWeights + 24, floatWeights + 28, floatWeights + 60);
+}
+
+NNEDI3_AVX512VNNI_TARGET
+void computeNetwork0newVNNI(const float* inputRaw, const float* weightsRaw,
+    std::uint8_t* result)
+{
+    const auto* input = reinterpret_cast<const std::int16_t*>(inputRaw);
+    const auto* weights = reinterpret_cast<const std::int16_t*>(weightsRaw);
+    const float* const floatWeights = reinterpret_cast<const float*>(weights + 256);
+    const __m128 converted = dotProductInt16VNNI64(input, weights);
+    const __m128 firstLayer = elliott(_mm_fmadd_ps(converted,
+        _mm_loadu_ps(floatWeights), _mm_loadu_ps(floatWeights + 4)));
+    const __m128 output = accumulateFour(
+        firstLayer, floatWeights + 8, _mm_loadu_ps(floatWeights + 24));
+    const __mmask8 nonNegative = _mm_cmp_ps_mask(
+        output, _mm_setzero_ps(), _CMP_NLT_US);
+    const std::uint32_t bytes = ((nonNegative & 0x01u) << 0)
+        | ((nonNegative & 0x02u) << 7)
+        | ((nonNegative & 0x04u) << 14)
+        | ((nonNegative & 0x08u) << 21);
+    std::memcpy(result, &bytes, sizeof(bytes));
+}
+
 void convertBytesToInt16(const std::uint8_t* source, const int pitch,
     std::int16_t* destination, const int width)
 {
@@ -172,8 +289,18 @@ extern "C" void uc2s48_AVX512(
 extern "C" void uc2s64_AVX512(
     const std::uint8_t* source, const int pitch, float* destination)
 {
-    convertBytesToInt16(source, pitch,
-        reinterpret_cast<std::int16_t*>(destination), 16);
+    auto* output = reinterpret_cast<std::int16_t*>(destination);
+    const std::ptrdiff_t rowStride = static_cast<std::ptrdiff_t>(pitch) * 2;
+    const __m256i rows01 = _mm256_inserti128_si256(
+        _mm256_castsi128_si256(_mm_loadu_si128(
+            reinterpret_cast<const __m128i*>(source))),
+        _mm_loadu_si128(reinterpret_cast<const __m128i*>(source + rowStride)), 1);
+    const __m256i rows23 = _mm256_inserti128_si256(
+        _mm256_castsi128_si256(_mm_loadu_si128(
+            reinterpret_cast<const __m128i*>(source + rowStride * 2))),
+        _mm_loadu_si128(reinterpret_cast<const __m128i*>(source + rowStride * 3)), 1);
+    _mm512_storeu_si512(output, _mm512_cvtepu8_epi16(rows01));
+    _mm512_storeu_si512(output + 32, _mm512_cvtepu8_epi16(rows23));
 }
 
 extern "C" void uc2s48_AVX512_16(
@@ -250,6 +377,10 @@ extern "C" void computeNetwork0_AVX512(
 extern "C" void computeNetwork0_i16_AVX512(
     const float* inputRaw, const float* weightsRaw, std::uint8_t* result)
 {
+    if (nnedi3_avx512_vnni_supported) {
+        computeNetwork0i16VNNI(inputRaw, weightsRaw, result);
+        return;
+    }
     const auto* input = reinterpret_cast<const std::int16_t*>(inputRaw);
     const auto* weights = reinterpret_cast<const std::int16_t*>(weightsRaw);
     const float* const floatWeights = reinterpret_cast<const float*>(weights + 192);
@@ -263,6 +394,10 @@ extern "C" void computeNetwork0_i16_AVX512(
 extern "C" void computeNetwork0new_AVX512(
     const float* inputRaw, const float* weightsRaw, std::uint8_t* result)
 {
+    if (nnedi3_avx512_vnni_supported) {
+        computeNetwork0newVNNI(inputRaw, weightsRaw, result);
+        return;
+    }
     const auto* input = reinterpret_cast<const std::int16_t*>(inputRaw);
     const auto* weights = reinterpret_cast<const std::int16_t*>(weightsRaw);
     const float* const floatWeights = reinterpret_cast<const float*>(weights + 256);
@@ -279,3 +414,5 @@ extern "C" void computeNetwork0new_AVX512(
         | ((nonNegative & 0x08u) << 21);
     std::memcpy(result, &bytes, sizeof(bytes));
 }
+
+#undef NNEDI3_AVX512VNNI_TARGET
