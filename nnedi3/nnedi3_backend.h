@@ -15,9 +15,13 @@ constexpr int CPU_AVX512F = 0x00100000;
 constexpr int CPU_AVX512DQ = 0x00200000;
 constexpr int CPU_AVX512BW = 0x02000000;
 constexpr int CPU_AVX512VL = 0x04000000;
+constexpr int CPU_AVXVNNI = 0x20000000;
+constexpr int CPU_AVX512VNNI = 0x40000000;
 
 constexpr int AVX512_REQUIRED = CPU_AVX2 | CPU_FMA3 | CPU_AVX512F
     | CPU_AVX512DQ | CPU_AVX512BW | CPU_AVX512VL;
+constexpr int AVXVNNI_REQUIRED = CPU_AVX2 | CPU_FMA3 | CPU_AVXVNNI;
+constexpr int AVX512VNNI_REQUIRED = AVX512_REQUIRED | CPU_AVX512VNNI;
 
 enum class Platform {
     Windows,
@@ -31,8 +35,10 @@ enum class Backend {
     AVX,
     AVX2,
     AVX2FMA3,
+    AVX2FMA3VNNI,
     AVX2FMA4,
     AVX512,
+    AVX512VNNI,
 };
 
 enum class WeightLayout {
@@ -52,8 +58,10 @@ enum class SelectionError {
 enum class PredictorDot {
     Existing,
     CInt16,
+    AVXVNNIInt16,
     AVX512Float,
     AVX512Int16,
+    AVX512VNNIInt16,
 };
 
 struct BackendSelection {
@@ -84,6 +92,10 @@ constexpr bool has_all_features(const int cpu_flags, const int required) {
     return (cpu_flags & required) == required;
 }
 
+constexpr bool is_avx512_backend(const Backend backend) {
+    return backend == Backend::AVX512 || backend == Backend::AVX512VNNI;
+}
+
 constexpr Backend backend_from_legacy_opt(const int opt) {
     return opt == 1 ? Backend::C
         : opt == 2 ? Backend::SSE2
@@ -92,17 +104,29 @@ constexpr Backend backend_from_legacy_opt(const int opt) {
         : opt == 5 ? Backend::AVX2
         : opt == 6 ? Backend::AVX2FMA3
         : opt == 7 ? Backend::AVX2FMA4
-        : opt == 8 ? Backend::AVX512
+        : opt == 8 ? Backend::AVX2FMA3VNNI
+        : opt == 9 ? Backend::AVX512
+        : opt == 10 ? Backend::AVX512VNNI
         : Backend::C;
 }
 
 constexpr BackendSelection select_windows_backend(const int requested_opt, const int cpu_flags) {
-    if (requested_opt < 0 || requested_opt > 8) {
+    if (requested_opt < 0 || requested_opt > 10) {
         return {Backend::C, requested_opt, 0, SelectionError::InvalidOpt};
     }
-    if (requested_opt == 8) {
+    if (requested_opt == 10) {
+        const int missing = AVX512VNNI_REQUIRED & ~cpu_flags;
+        return {Backend::AVX512VNNI, 10, missing,
+            missing == 0 ? SelectionError::None : SelectionError::MissingFeatures};
+    }
+    if (requested_opt == 9) {
         const int missing = AVX512_REQUIRED & ~cpu_flags;
-        return {Backend::AVX512, 8, missing,
+        return {Backend::AVX512, 9, missing,
+            missing == 0 ? SelectionError::None : SelectionError::MissingFeatures};
+    }
+    if (requested_opt == 8) {
+        const int missing = AVXVNNI_REQUIRED & ~cpu_flags;
+        return {Backend::AVX2FMA3VNNI, 8, missing,
             missing == 0 ? SelectionError::None : SelectionError::MissingFeatures};
     }
     if (requested_opt >= 5) {
@@ -115,6 +139,9 @@ constexpr BackendSelection select_windows_backend(const int requested_opt, const
         return {backend_from_legacy_opt(requested_opt), requested_opt, 0, SelectionError::None};
     }
 
+    if (has_all_features(cpu_flags, AVXVNNI_REQUIRED)) {
+        return {Backend::AVX2FMA3VNNI, 8, 0, SelectionError::None};
+    }
     if (has_all_features(cpu_flags, CPU_AVX2 | CPU_FMA3)) {
         return {Backend::AVX2FMA3, 6, 0, SelectionError::None};
     }
@@ -131,16 +158,29 @@ constexpr BackendSelection select_windows_backend(const int requested_opt, const
 }
 
 constexpr BackendSelection select_linux_backend(const int requested_opt, const int cpu_flags) {
-    if (requested_opt < 0 || requested_opt > 8) {
+    if (requested_opt < 0 || requested_opt > 10) {
         return {Backend::C, requested_opt, 0, SelectionError::InvalidOpt};
     }
-    if (requested_opt == 8) {
+    if (requested_opt == 10) {
+        const int missing = AVX512VNNI_REQUIRED & ~cpu_flags;
+        return {Backend::AVX512VNNI, 10, missing,
+            missing == 0 ? SelectionError::None : SelectionError::MissingFeatures};
+    }
+    if (requested_opt == 9) {
         const int missing = AVX512_REQUIRED & ~cpu_flags;
-        return {Backend::AVX512, 8, missing,
+        return {Backend::AVX512, 9, missing,
+            missing == 0 ? SelectionError::None : SelectionError::MissingFeatures};
+    }
+    if (requested_opt == 8) {
+        const int missing = AVXVNNI_REQUIRED & ~cpu_flags;
+        return {Backend::AVX2FMA3VNNI, 8, missing,
             missing == 0 ? SelectionError::None : SelectionError::MissingFeatures};
     }
 
     const bool has_avx2_fma3 = has_all_features(cpu_flags, CPU_AVX2 | CPU_FMA3);
+    if (requested_opt == 0 && has_all_features(cpu_flags, AVXVNNI_REQUIRED)) {
+        return {Backend::AVX2FMA3VNNI, 8, 0, SelectionError::None};
+    }
     if (requested_opt == 0 || requested_opt == 5 || requested_opt == 6 || requested_opt == 7) {
         return has_avx2_fma3
             ? BackendSelection{Backend::AVX2FMA3, 6, 0, SelectionError::None}
@@ -157,19 +197,23 @@ constexpr BackendSelection select_backend(const Platform platform,
 }
 
 constexpr KernelSet make_kernel_set(const Backend backend) {
-    const Backend kernel_backend = backend == Backend::AVX512 ? Backend::AVX2FMA3 : backend;
+    const bool is_avx512 = is_avx512_backend(backend);
+    const Backend kernel_backend = is_avx512 ? Backend::AVX2FMA3 : backend;
     const bool has_sse2 = kernel_backend != Backend::C;
     const bool has_sse41 = kernel_backend == Backend::SSE41 || kernel_backend == Backend::AVX
         || kernel_backend == Backend::AVX2 || kernel_backend == Backend::AVX2FMA3
+        || kernel_backend == Backend::AVX2FMA3VNNI
         || kernel_backend == Backend::AVX2FMA4;
     const bool has_avx = kernel_backend == Backend::AVX || kernel_backend == Backend::AVX2
-        || kernel_backend == Backend::AVX2FMA3 || kernel_backend == Backend::AVX2FMA4;
-    const bool has_avx2 = kernel_backend == Backend::AVX2 || kernel_backend == Backend::AVX2FMA3
+        || kernel_backend == Backend::AVX2FMA3 || kernel_backend == Backend::AVX2FMA3VNNI
         || kernel_backend == Backend::AVX2FMA4;
-    const bool has_fma3 = kernel_backend == Backend::AVX2FMA3;
+    const bool has_avx2 = kernel_backend == Backend::AVX2 || kernel_backend == Backend::AVX2FMA3
+        || kernel_backend == Backend::AVX2FMA3VNNI || kernel_backend == Backend::AVX2FMA4;
+    const bool has_fma3 = kernel_backend == Backend::AVX2FMA3
+        || kernel_backend == Backend::AVX2FMA3VNNI;
     const WeightLayout layout = has_avx2 ? WeightLayout::AVX2
         : has_sse2 ? WeightLayout::LegacySIMD : WeightLayout::NeuronMajor;
-    const WeightLayout prescreenerLayout = backend == Backend::AVX512
+    const WeightLayout prescreenerLayout = is_avx512
         ? WeightLayout::AVX512Prescreener : layout;
     return {backend, kernel_backend, prescreenerLayout, layout, has_sse2, has_sse41,
         has_avx, has_avx2, has_fma3};
@@ -184,11 +228,16 @@ constexpr PredictorPlan make_predictor_plan(const KernelSet& kernels,
     if (int16_predictor && bits_per_pixel > 14) {
         return {PredictorDot::CInt16, WeightLayout::NeuronMajor};
     }
-    if (kernels.requested_backend == Backend::AVX512) {
-        return {int16_predictor ? PredictorDot::AVX512Int16
-                               : PredictorDot::AVX512Float,
+    if (kernels.requested_backend == Backend::AVX512
+        || kernels.requested_backend == Backend::AVX512VNNI) {
+        return {int16_predictor
+                ? (kernels.requested_backend == Backend::AVX512VNNI
+                    ? PredictorDot::AVX512VNNIInt16 : PredictorDot::AVX512Int16)
+                : PredictorDot::AVX512Float,
             WeightLayout::AVX512};
     }
+    if (kernels.requested_backend == Backend::AVX2FMA3VNNI && int16_predictor)
+        return {PredictorDot::AVXVNNIInt16, WeightLayout::AVX2};
     return {PredictorDot::Existing, kernels.predictor_weights};
 }
 

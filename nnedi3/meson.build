@@ -8,6 +8,8 @@ nnedi3_sources = [
 
 nnedi3_avx2_sources = [
   'nnedi3_intrinsic_FMA_x64.cpp',
+  'nnedi3_intrinsic_AVXVNNI.cpp',
+  'nnedi3_intrinsic_AVXVNNI.h',
   'nnedi3_intrinsic.h'
 ]
 

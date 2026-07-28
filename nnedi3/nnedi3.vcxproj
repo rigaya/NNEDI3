@@ -381,6 +381,7 @@
     <ClInclude Include="nnedi3.h" />
     <ClInclude Include="nnedi3_backend.h" />
     <ClInclude Include="nnedi3_intrinsic.h" />
+    <ClInclude Include="nnedi3_intrinsic_AVXVNNI.h" />
     <ClInclude Include="nnedi3_intrinsic_AVX512.h" />
     <ClInclude Include="nnedi3_intrinsic_AVX512_extract.h" />
     <ClInclude Include="nnedi3_intrinsic_AVX512_pixel_convert.h" />
@@ -394,6 +395,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="nnedi3.cpp" />
+    <ClCompile Include="nnedi3_intrinsic_AVXVNNI.cpp">
+      <AdditionalOptions Condition="'$(Platform)'=='x64'">/arch:AVX2 /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <WholeProgramOptimization Condition="'$(Platform)'=='x64'">false</WholeProgramOptimization>
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="nnedi3_intrinsic_AVX512.cpp">
       <AdditionalOptions Condition="'$(Platform)'=='x64'">/arch:AVX512 /utf-8 %(AdditionalOptions)</AdditionalOptions>
       <WholeProgramOptimization Condition="'$(Platform)'=='x64'">false</WholeProgramOptimization>

@@ -18,5 +18,9 @@ void computeNetwork0_i16_AVX512(
     const float* input, const float* weights, std::uint8_t* result);
 void computeNetwork0new_AVX512(
     const float* input, const float* weights, std::uint8_t* result);
+void computeNetwork0_i16_AVX512VNNI(
+    const float* input, const float* weights, std::uint8_t* result);
+void computeNetwork0new_AVX512VNNI(
+    const float* input, const float* weights, std::uint8_t* result);
 
 }
