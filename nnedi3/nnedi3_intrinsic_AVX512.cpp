@@ -4,6 +4,18 @@
 
 #include <cstddef>
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#else
+#include <cpuid.h>
+#endif
+
+#if defined(__GNUC__) || defined(__clang__)
+#define NNEDI3_AVX512VNNI_TARGET __attribute__((target("avx512vnni")))
+#else
+#define NNEDI3_AVX512VNNI_TARGET
+#endif
+
 namespace {
 
 float horizontalSum16(const __m512 value)
@@ -28,6 +40,183 @@ std::int32_t horizontalSum16xInt32(const __m512i value)
     sum4 = _mm_add_epi32(sum4, _mm_shuffle_epi32(sum4, 0x4e));
     sum4 = _mm_add_epi32(sum4, _mm_shuffle_epi32(sum4, 0xb1));
     return _mm_cvtsi128_si32(sum4);
+}
+
+__m128i horizontalSum4x16Int32(const __m512i sums0, const __m512i sums1,
+    const __m512i sums2, const __m512i sums3)
+{
+    __m256i sum0 = _mm256_add_epi32(
+        _mm512_castsi512_si256(sums0), _mm512_extracti64x4_epi64(sums0, 1));
+    __m256i sum1 = _mm256_add_epi32(
+        _mm512_castsi512_si256(sums1), _mm512_extracti64x4_epi64(sums1, 1));
+    __m256i sum2 = _mm256_add_epi32(
+        _mm512_castsi512_si256(sums2), _mm512_extracti64x4_epi64(sums2, 1));
+    __m256i sum3 = _mm256_add_epi32(
+        _mm512_castsi512_si256(sums3), _mm512_extracti64x4_epi64(sums3, 1));
+    const __m256i high01 = _mm256_unpackhi_epi64(sum0, sum1);
+    const __m256i high23 = _mm256_unpackhi_epi64(sum2, sum3);
+    sum0 = _mm256_add_epi32(_mm256_unpacklo_epi64(sum0, sum1), high01);
+    sum2 = _mm256_add_epi32(_mm256_unpacklo_epi64(sum2, sum3), high23);
+    const __m128i pair01 = _mm_add_epi32(
+        _mm256_castsi256_si128(sum0), _mm256_extracti128_si256(sum0, 1));
+    const __m128i pair23 = _mm_add_epi32(
+        _mm256_castsi256_si128(sum2), _mm256_extracti128_si256(sum2, 1));
+    return _mm_add_epi32(
+        _mm_castps_si128(_mm_shuffle_ps(
+            _mm_castsi128_ps(pair01), _mm_castsi128_ps(pair23), 0x88)),
+        _mm_castps_si128(_mm_shuffle_ps(
+            _mm_castsi128_ps(pair01), _mm_castsi128_ps(pair23), 0xdd)));
+}
+
+bool hasAVX512VNNI()
+{
+#if defined(_MSC_VER)
+    int registers[4]{};
+    __cpuidex(registers, 7, 0);
+    return (registers[2] & (1 << 11)) != 0;
+#else
+    unsigned int eax = 0, ebx = 0, ecx = 0, edx = 0;
+    return __get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx) != 0
+        && (ecx & (1u << 11)) != 0;
+#endif
+}
+
+NNEDI3_AVX512VNNI_TARGET
+void dotProdInt16Len128AVX512VNNI(const std::int16_t* data,
+    const std::int16_t* weights, float* vals, const int n, const float istd)
+{
+    const __m512i data0 = _mm512_loadu_si512(data);
+    const __m512i data1 = _mm512_loadu_si512(data + 32);
+    const __m512i data2 = _mm512_loadu_si512(data + 64);
+    const __m512i data3 = _mm512_loadu_si512(data + 96);
+    const float* const scaleBias = reinterpret_cast<const float*>(
+        weights + static_cast<std::size_t>(n) * 128);
+    const __m128 inverseStdDev = _mm_set1_ps(istd);
+
+    for (int neuron = 0; neuron < n; neuron += 4) {
+        const std::int16_t* const group = weights
+            + static_cast<std::size_t>(neuron) * 128;
+        __m512i sums0 = _mm512_setzero_si512();
+        __m512i sums1 = _mm512_setzero_si512();
+        __m512i sums2 = _mm512_setzero_si512();
+        __m512i sums3 = _mm512_setzero_si512();
+
+        sums0 = _mm512_dpwssd_epi32(sums0, data0, _mm512_loadu_si512(group));
+        sums1 = _mm512_dpwssd_epi32(sums1, data0, _mm512_loadu_si512(group + 32));
+        sums2 = _mm512_dpwssd_epi32(sums2, data0, _mm512_loadu_si512(group + 64));
+        sums3 = _mm512_dpwssd_epi32(sums3, data0, _mm512_loadu_si512(group + 96));
+        sums0 = _mm512_dpwssd_epi32(sums0, data1, _mm512_loadu_si512(group + 128));
+        sums1 = _mm512_dpwssd_epi32(sums1, data1, _mm512_loadu_si512(group + 160));
+        sums2 = _mm512_dpwssd_epi32(sums2, data1, _mm512_loadu_si512(group + 192));
+        sums3 = _mm512_dpwssd_epi32(sums3, data1, _mm512_loadu_si512(group + 224));
+        sums0 = _mm512_dpwssd_epi32(sums0, data2, _mm512_loadu_si512(group + 256));
+        sums1 = _mm512_dpwssd_epi32(sums1, data2, _mm512_loadu_si512(group + 288));
+        sums2 = _mm512_dpwssd_epi32(sums2, data2, _mm512_loadu_si512(group + 320));
+        sums3 = _mm512_dpwssd_epi32(sums3, data2, _mm512_loadu_si512(group + 352));
+        sums0 = _mm512_dpwssd_epi32(sums0, data3, _mm512_loadu_si512(group + 384));
+        sums1 = _mm512_dpwssd_epi32(sums1, data3, _mm512_loadu_si512(group + 416));
+        sums2 = _mm512_dpwssd_epi32(sums2, data3, _mm512_loadu_si512(group + 448));
+        sums3 = _mm512_dpwssd_epi32(sums3, data3, _mm512_loadu_si512(group + 480));
+
+        const __m128i integerSums = horizontalSum4x16Int32(
+            sums0, sums1, sums2, sums3);
+        const float* const groupScaleBias = scaleBias
+            + static_cast<std::size_t>(neuron / 4) * 8;
+        const __m128 scaled = _mm_mul_ps(
+            _mm_cvtepi32_ps(integerSums), _mm_loadu_ps(groupScaleBias));
+        _mm_storeu_ps(vals + neuron, _mm_fmadd_ps(
+            scaled, inverseStdDev, _mm_loadu_ps(groupScaleBias + 4)));
+    }
+}
+
+NNEDI3_AVX512VNNI_TARGET
+void dotProdInt16AVX512VNNI(const float* dataRaw, const float* weightsRaw,
+    float* vals, const int n, const int len, const float* istd)
+{
+    const auto* const data = reinterpret_cast<const std::int16_t*>(dataRaw);
+    const auto* const weights = reinterpret_cast<const std::int16_t*>(weightsRaw);
+    if (len == 128) {
+        dotProdInt16Len128AVX512VNNI(data, weights, vals, n, *istd);
+        return;
+    }
+    const auto* const scaleBias = reinterpret_cast<const float*>(
+        weights + static_cast<std::size_t>(n) * len);
+    const __m128 inverseStdDev = _mm_set1_ps(*istd);
+    const int fullLength = len & ~31;
+    const int tailLength = len - fullLength;
+
+    for (int neuron = 0; neuron < n; neuron += 8) {
+        const std::int16_t* const group0 = weights
+            + static_cast<std::size_t>(neuron) * len;
+        const std::int16_t* const group1 = group0
+            + static_cast<std::size_t>(4) * len;
+        __m512i sums0 = _mm512_setzero_si512();
+        __m512i sums1 = _mm512_setzero_si512();
+        __m512i sums2 = _mm512_setzero_si512();
+        __m512i sums3 = _mm512_setzero_si512();
+        __m512i sums4 = _mm512_setzero_si512();
+        __m512i sums5 = _mm512_setzero_si512();
+        __m512i sums6 = _mm512_setzero_si512();
+        __m512i sums7 = _mm512_setzero_si512();
+
+        for (int input = 0; input < fullLength; input += 32) {
+            const __m512i values = _mm512_loadu_si512(data + input);
+            const std::int16_t* const tile0 = group0
+                + static_cast<std::size_t>(input) * 4;
+            const std::int16_t* const tile1 = group1
+                + static_cast<std::size_t>(input) * 4;
+            sums0 = _mm512_dpwssd_epi32(sums0, values, _mm512_loadu_si512(tile0));
+            sums1 = _mm512_dpwssd_epi32(sums1, values, _mm512_loadu_si512(tile0 + 32));
+            sums2 = _mm512_dpwssd_epi32(sums2, values, _mm512_loadu_si512(tile0 + 64));
+            sums3 = _mm512_dpwssd_epi32(sums3, values, _mm512_loadu_si512(tile0 + 96));
+            sums4 = _mm512_dpwssd_epi32(sums4, values, _mm512_loadu_si512(tile1));
+            sums5 = _mm512_dpwssd_epi32(sums5, values, _mm512_loadu_si512(tile1 + 32));
+            sums6 = _mm512_dpwssd_epi32(sums6, values, _mm512_loadu_si512(tile1 + 64));
+            sums7 = _mm512_dpwssd_epi32(sums7, values, _mm512_loadu_si512(tile1 + 96));
+        }
+
+        if (tailLength != 0) {
+            const __mmask32 tailMask = static_cast<__mmask32>(
+                (UINT32_C(1) << tailLength) - UINT32_C(1));
+            const __m512i values = _mm512_maskz_loadu_epi16(
+                tailMask, data + fullLength);
+            const std::int16_t* const tile0 = group0
+                + static_cast<std::size_t>(fullLength) * 4;
+            const std::int16_t* const tile1 = group1
+                + static_cast<std::size_t>(fullLength) * 4;
+            sums0 = _mm512_dpwssd_epi32(sums0, values,
+                _mm512_maskz_loadu_epi16(tailMask, tile0));
+            sums1 = _mm512_dpwssd_epi32(sums1, values,
+                _mm512_maskz_loadu_epi16(tailMask, tile0 + tailLength));
+            sums2 = _mm512_dpwssd_epi32(sums2, values,
+                _mm512_maskz_loadu_epi16(tailMask, tile0 + 2 * tailLength));
+            sums3 = _mm512_dpwssd_epi32(sums3, values,
+                _mm512_maskz_loadu_epi16(tailMask, tile0 + 3 * tailLength));
+            sums4 = _mm512_dpwssd_epi32(sums4, values,
+                _mm512_maskz_loadu_epi16(tailMask, tile1));
+            sums5 = _mm512_dpwssd_epi32(sums5, values,
+                _mm512_maskz_loadu_epi16(tailMask, tile1 + tailLength));
+            sums6 = _mm512_dpwssd_epi32(sums6, values,
+                _mm512_maskz_loadu_epi16(tailMask, tile1 + 2 * tailLength));
+            sums7 = _mm512_dpwssd_epi32(sums7, values,
+                _mm512_maskz_loadu_epi16(tailMask, tile1 + 3 * tailLength));
+        }
+
+        const __m128i integerSums0 = horizontalSum4x16Int32(
+            sums0, sums1, sums2, sums3);
+        const __m128i integerSums1 = horizontalSum4x16Int32(
+            sums4, sums5, sums6, sums7);
+        const float* const groupScaleBias = scaleBias
+            + static_cast<std::size_t>(neuron / 4) * 8;
+        const __m128 scaled0 = _mm_mul_ps(
+            _mm_cvtepi32_ps(integerSums0), _mm_loadu_ps(groupScaleBias));
+        const __m128 scaled1 = _mm_mul_ps(
+            _mm_cvtepi32_ps(integerSums1), _mm_loadu_ps(groupScaleBias + 8));
+        _mm_storeu_ps(vals + neuron, _mm_fmadd_ps(
+            scaled0, inverseStdDev, _mm_loadu_ps(groupScaleBias + 4)));
+        _mm_storeu_ps(vals + neuron + 4, _mm_fmadd_ps(
+            scaled1, inverseStdDev, _mm_loadu_ps(groupScaleBias + 12)));
+    }
 }
 
 void dotProdFloatAVX512(const float* data, const float* weights,
@@ -255,6 +444,8 @@ extern "C" std::uint32_t nnedi3_avx512_build_marker() noexcept
     return UINT32_C(0x41565835);
 }
 
+extern "C" const bool nnedi3_avx512_vnni_supported = hasAVX512VNNI();
+
 extern "C" void dotProd_m32_m16_AVX512(const float* data, const float* weights,
     float* vals, const int n, const int len, const float* istd)
 {
@@ -270,13 +461,19 @@ extern "C" void dotProd_m48_m16_AVX512(const float* data, const float* weights,
 extern "C" void dotProd_m32_m16_i16_AVX512(const float* data, const float* weights,
     float* vals, const int n, const int len, const float* istd)
 {
-    dotProdInt16AVX512(data, weights, vals, n, len, istd);
+    if (nnedi3_avx512_vnni_supported)
+        dotProdInt16AVX512VNNI(data, weights, vals, n, len, istd);
+    else
+        dotProdInt16AVX512(data, weights, vals, n, len, istd);
 }
 
 extern "C" void dotProd_m48_m16_i16_AVX512(const float* data, const float* weights,
     float* vals, const int n, const int len, const float* istd)
 {
-    dotProdInt16AVX512(data, weights, vals, n, len, istd);
+    if (nnedi3_avx512_vnni_supported)
+        dotProdInt16AVX512VNNI(data, weights, vals, n, len, istd);
+    else
+        dotProdInt16AVX512(data, weights, vals, n, len, istd);
 }
 
 extern "C" void e0_m16_AVX512(float* values, const int n)
@@ -299,3 +496,5 @@ extern "C" void weightedAvgElliottMul5_m16_AVX512(
 {
     weightedAverageAVX512(weights, n, mstd);
 }
+
+#undef NNEDI3_AVX512VNNI_TARGET
