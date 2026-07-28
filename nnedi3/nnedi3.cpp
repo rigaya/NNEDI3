@@ -23,6 +23,7 @@
 #include "nnedi3.h"
 #include "nnedi3_backend.h"
 #include "nnedi3_intrinsic.h"
+#include "nnedi3_intrinsic_AVXVNNI.h"
 #include "nnedi3_intrinsic_AVX512.h"
 #include "nnedi3_intrinsic_AVX512_extract.h"
 #include "nnedi3_intrinsic_AVX512_prescreener.h"
@@ -32,6 +33,12 @@
 #include <cstring>
 #include <limits>
 #include <string>
+
+#if defined(_WIN32) || defined(_WIN64)
+#include <intrin.h>
+#else
+#include <cpuid.h>
+#endif
 
 #if _MSC_VER
 #define SSE2_ASM_AVAILABLE 1
@@ -142,14 +149,16 @@ static_assert(nnedi3_backend::CPU_AVX512BW == CPUF_AVX512BW, "CPUF_AVX512BW mism
 static_assert(nnedi3_backend::CPU_AVX512VL == CPUF_AVX512VL, "CPUF_AVX512VL mismatch");
 
 #if !(defined(_WIN32) || defined(_WIN64))
-// Linux では C と AVX2+FMA3 の組み合わせだけを公開する。
+// Linux では C、AVX2+FMA3、AVX-VNNI、AVX512系だけを公開する。
 static_assert(nnedi3_backend::select_linux_backend(0, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 6, "Linux の自動選択で AVX2+FMA3 を選べません");
+static_assert(nnedi3_backend::select_linux_backend(0, CPUF_AVX2 | CPUF_FMA3 | nnedi3_backend::CPU_AVXVNNI).normalized_opt == 8, "Linux の自動選択で AVX-VNNI を選べません");
 static_assert(nnedi3_backend::select_linux_backend(0, CPUF_AVX2).normalized_opt == 1, "Linux で FMA3 なしの AVX2 を選択しています");
 static_assert(nnedi3_backend::select_linux_backend(4, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 1, "Linux の opt=2,3,4 は C へ正規化する必要があります");
 static_assert(nnedi3_backend::select_linux_backend(5, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 6, "Linux の opt=5 は AVX2+FMA3 へ正規化する必要があります");
 static_assert(nnedi3_backend::select_linux_backend(7, CPUF_FMA3).normalized_opt == 1, "Linux で AVX2 なしの FMA3 を選択しています");
 static_assert(!nnedi3_backend::uses_simd_layout(nnedi3_backend::kernel_set_from_opt(1).predictor_weights), "C 版には neuron-major の重みが必要です");
 static_assert(nnedi3_backend::uses_avx2_layout(nnedi3_backend::kernel_set_from_opt(6).predictor_weights), "AVX2+FMA3 版には AVX2 配列の重みが必要です");
+static_assert(nnedi3_backend::uses_avx2_layout(nnedi3_backend::kernel_set_from_opt(8).predictor_weights), "AVX-VNNI 版には AVX2 配列の重みが必要です");
 #endif
 
 static constexpr Platform currentPlatform()
@@ -179,24 +188,66 @@ static std::string missingFeatureNames(const int missing)
 	if ((missing & nnedi3_backend::CPU_AVX512BW) != 0) add("AVX512BW");
 	if ((missing & nnedi3_backend::CPU_AVX512DQ) != 0) add("AVX512DQ");
 	if ((missing & nnedi3_backend::CPU_AVX512VL) != 0) add("AVX512VL");
+	if ((missing & nnedi3_backend::CPU_AVXVNNI) != 0) add("AVX-VNNI");
+	if ((missing & nnedi3_backend::CPU_AVX512VNNI) != 0) add("AVX512-VNNI");
 	return result;
+}
+
+static int detectVnniCpuFlags()
+{
+#if defined(_WIN32) && !defined(_WIN64)
+	return 0;
+#elif defined(_WIN32) || defined(_WIN64)
+	int leaf0[4]{};
+	__cpuid(leaf0, 0);
+	if (leaf0[0] < 7) return 0;
+	int leaf7[4]{};
+	__cpuidex(leaf7, 7, 0);
+	int result = (leaf7[2] & (1 << 11)) != 0
+		? nnedi3_backend::CPU_AVX512VNNI : 0;
+	if (leaf7[0] >= 1)
+	{
+		__cpuidex(leaf7, 7, 1);
+		if ((leaf7[0] & (1 << 4)) != 0)
+			result |= nnedi3_backend::CPU_AVXVNNI;
+	}
+	return result;
+#else
+	const unsigned int maxLeaf = __get_cpuid_max(0, nullptr);
+	if (maxLeaf < 7) return 0;
+	unsigned int eax = 0, ebx = 0, ecx = 0, edx = 0;
+	if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx) == 0) return 0;
+	int result = (ecx & (1u << 11)) != 0
+		? nnedi3_backend::CPU_AVX512VNNI : 0;
+	if (eax >= 1 && __get_cpuid_count(7, 1, &eax, &ebx, &ecx, &edx) != 0
+		&& (eax & (1u << 4)) != 0)
+		result |= nnedi3_backend::CPU_AVXVNNI;
+	return result;
+#endif
 }
 
 static int selectRequestedOpt(const int requestedOpt, const int cpuFlags,
 	IScriptEnvironment *env, const char *filterName)
 {
 #if defined(_WIN32) && !defined(_WIN64)
-	if (requestedOpt == 8)
-		env->ThrowError("%s: opt=8 is not supported by the Win32 build; use x64!", filterName);
+	if (requestedOpt >= 8)
+		env->ThrowError("%s: opt=%d is not supported by the Win32 build; use x64!", filterName, requestedOpt);
 #endif
-	const BackendSelection selection = nnedi3_backend::select_backend(currentPlatform(), requestedOpt, cpuFlags);
+	const BackendSelection selection = nnedi3_backend::select_backend(
+		currentPlatform(), requestedOpt, cpuFlags | detectVnniCpuFlags());
 	if (selection.error == SelectionError::InvalidOpt)
-		env->ThrowError("%s: opt must be in [0,8]!", filterName);
+		env->ThrowError("%s: opt must be in [0,10]!", filterName);
 	if (selection.error == SelectionError::MissingFeatures)
 	{
 		const std::string missing = missingFeatureNames(selection.missing_features);
-		if (requestedOpt == 8)
-			env->ThrowError("%s: opt=8 requires AVX2, FMA3, AVX512F, AVX512BW, AVX512DQ and AVX512VL; missing: %s",
+		if (requestedOpt == 10)
+			env->ThrowError("%s: opt=10 requires AVX2, FMA3, AVX512F, AVX512BW, AVX512DQ, AVX512VL and AVX512-VNNI; missing: %s",
+				filterName, missing.c_str());
+		else if (requestedOpt == 9)
+			env->ThrowError("%s: opt=9 requires AVX2, FMA3, AVX512F, AVX512BW, AVX512DQ and AVX512VL; missing: %s",
+				filterName, missing.c_str());
+		else if (requestedOpt == 8)
+			env->ThrowError("%s: opt=8 requires AVX2, FMA3 and AVX-VNNI; missing: %s",
 				filterName, missing.c_str());
 		else
 			env->ThrowError("%s: opt=%d requires AVX2 and FMA3; missing: %s",
@@ -288,10 +339,10 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 		if (threads>1) poolInterface->DeAllocateAllThreads(true);
 		env->ThrowError("nnedi3: qual must be set to 1 or 2!\n");
 	}
-	if ((opt<0) || (opt>8))
+	if ((opt<0) || (opt>10))
 	{
 		if (threads>1) poolInterface->DeAllocateAllThreads(true);
-		env->ThrowError("nnedi3: opt must be in [0,8]!");
+		env->ThrowError("nnedi3: opt must be in [0,10]!");
 	}
 	if ((fapprox<0) || (fapprox>15))
 	{
@@ -489,7 +540,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 		env->ThrowError("nnedi3: Error while allocating planar dstPF!");
 	}
 	const bool useAVX512PixelConversion =
-		kernelSet.requested_backend == nnedi3_backend::Backend::AVX512;
+		nnedi3_backend::is_avx512_backend(kernelSet.requested_backend);
 	srcPF->setAVX512(useAVX512PixelConversion);
 	dstPF->setAVX512(useAVX512PixelConversion);
 
@@ -1996,9 +2047,16 @@ static PrescreenerKernels8 makePrescreenerKernels8(const KernelSet& backend)
 		result.processLine = processLine0_AVX2;
 	}
 	if (backend.has_fma3) result.oldNetworkFloat = computeNetwork0_FMA3;
+#if !defined(_WIN32) || defined(_WIN64)
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX2FMA3VNNI)
+	{
+		result.oldNetworkInt16 = computeNetwork0_i16_AVXVNNI;
+		result.newNetwork = computeNetwork0new_AVXVNNI;
+	}
+#endif
 #endif
 #if !defined(_WIN32) || defined(_WIN64)
-	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
 	{
 		result.oldInputInt16 = uc2s48_AVX512;
 		result.oldNetworkInt16 = computeNetwork0_i16_AVX512;
@@ -2007,6 +2065,11 @@ static PrescreenerKernels8 makePrescreenerKernels8(const KernelSet& backend)
 		result.newInput = uc2s64_AVX512;
 		result.newNetwork = computeNetwork0new_AVX512;
 		result.processLine = processLine0_AVX512;
+		if (backend.requested_backend == nnedi3_backend::Backend::AVX512VNNI)
+		{
+			result.oldNetworkInt16 = computeNetwork0_i16_AVX512VNNI;
+			result.newNetwork = computeNetwork0new_AVX512VNNI;
+		}
 	}
 #endif
 	return result;
@@ -2386,9 +2449,16 @@ static PrescreenerKernels16 makePrescreenerKernels16(const KernelSet& backend, c
 		result.processLine = processLine0_AVX2_16;
 	}
 	if (backend.has_fma3) result.oldNetworkFloat = computeNetwork0_FMA3;
+#if !defined(_WIN32) || defined(_WIN64)
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX2FMA3VNNI)
+	{
+		result.oldNetworkInt16 = computeNetwork0_i16_AVXVNNI;
+		result.newNetwork = computeNetwork0new_AVXVNNI;
+	}
+#endif
 #endif
 #if !defined(_WIN32) || defined(_WIN64)
-	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
 	{
 		result.oldInputFloat = uc2f48_AVX512_16;
 		result.oldNetworkFloat = computeNetwork0_AVX512;
@@ -2400,6 +2470,12 @@ static PrescreenerKernels16 makePrescreenerKernels16(const KernelSet& backend, c
 			result.newNetwork = computeNetwork0new_AVX512;
 		}
 		result.processLine = processLine0_AVX512_16;
+		if (backend.requested_backend == nnedi3_backend::Backend::AVX512VNNI
+			&& bits <= 14)
+		{
+			result.oldNetworkInt16 = computeNetwork0_i16_AVX512VNNI;
+			result.newNetwork = computeNetwork0new_AVX512VNNI;
+		}
 	}
 #endif
 	if (bits > 14)
@@ -2659,7 +2735,7 @@ static PrescreenerKernels32 makePrescreenerKernels32(const KernelSet& backend)
 	if (backend.has_fma3) result.network = computeNetwork0_FMA3;
 #endif
 #if !defined(_WIN32) || defined(_WIN64)
-	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
 	{
 		result.input = uc2f48_AVX512_32;
 		result.network = computeNetwork0_AVX512;
@@ -2943,11 +3019,15 @@ static PredictorKernels makePredictorKernels8(const KernelSet& backend,
 	}
 #endif
 #if !defined(_WIN32) || defined(_WIN64)
-	if (plan.dot == PredictorDot::AVX512Float)
+	if (plan.dot == PredictorDot::AVXVNNIInt16)
+		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVXVNNI : dotProd_m48_m16_i16_AVXVNNI;
+	else if (plan.dot == PredictorDot::AVX512Float)
 		floatDot = (asize%48)!=0 ? dotProd_m32_m16_AVX512 : dotProd_m48_m16_AVX512;
 	else if (plan.dot == PredictorDot::AVX512Int16)
 		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512 : dotProd_m48_m16_i16_AVX512;
-	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	else if (plan.dot == PredictorDot::AVX512VNNIInt16)
+		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512VNNI : dotProd_m48_m16_i16_AVX512VNNI;
+	if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
 	{
 		intExtract = extract_m8_i16_AVX512;
 		floatExtract = extract_m8_AVX512;
@@ -3048,7 +3128,7 @@ void evalFunc_2(void *ps)
 		if (backend.has_fma3) castScale = castScale_FMA3;
 #endif
 #if !defined(_WIN32) || defined(_WIN64)
-		if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+		if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
 			castScale = castScale_AVX512;
 #endif
 		if (castScale != NULL)
@@ -3322,11 +3402,15 @@ static PredictorKernels makePredictorKernels16(const KernelSet& backend,
 	}
 #endif
 #if !defined(_WIN32) || defined(_WIN64)
-	if (plan.dot == PredictorDot::AVX512Float)
+	if (plan.dot == PredictorDot::AVXVNNIInt16)
+		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVXVNNI : dotProd_m48_m16_i16_AVXVNNI;
+	else if (plan.dot == PredictorDot::AVX512Float)
 		floatDot = (asize%48)!=0 ? dotProd_m32_m16_AVX512 : dotProd_m48_m16_AVX512;
 	else if (plan.dot == PredictorDot::AVX512Int16)
 		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512 : dotProd_m48_m16_i16_AVX512;
-	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	else if (plan.dot == PredictorDot::AVX512VNNIInt16)
+		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512VNNI : dotProd_m48_m16_i16_AVX512VNNI;
+	if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
 	{
 		intExtract = bits<=10 ? extract_m8_i16_AVX512_16_10
 			: bits<=14 ? extract_m8_i16_AVX512_16 : extract_m8_i16_C_16;
@@ -3429,7 +3513,7 @@ void evalFunc_2_16(void *ps)
 		if (backend.has_fma3) castScale = castScale_FMA3_16;
 #endif
 #if !defined(_WIN32) || defined(_WIN64)
-		if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+		if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
 			castScale = castScale_AVX512_16;
 #endif
 		if (castScale != NULL)
@@ -3601,7 +3685,7 @@ static PredictorKernels makePredictorKernels32(const KernelSet& backend,
 #if !defined(_WIN32) || defined(_WIN64)
 	if (plan.dot == PredictorDot::AVX512Float)
 		dotProd = (asize%48)!=0 ? dotProd_m32_m16_AVX512 : dotProd_m48_m16_AVX512;
-	if (backend.requested_backend == nnedi3_backend::Backend::AVX512)
+	if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
 	{
 		extract = extract_m8_AVX512_32;
 		e0 = e0_m16_AVX512;
@@ -3882,8 +3966,8 @@ AVSValue __cdecl Create_nnedi3_rpow2(AVSValue args, void* user_data, IScriptEnvi
 		env->ThrowError("nnedi3_rpow2: 0 <= threads <= %d!\n",MAX_MT_THREADS);
 	if (threads_rs < 0 || threads_rs > MAX_MT_THREADS)
 		env->ThrowError("nnedi3_rpow2: 0 <= threads_rs <= %d!\n",MAX_MT_THREADS);
-	if (opt < 0 || opt > 8)
-		env->ThrowError("nnedi3_rpow2: opt must be in [0,8]!\n");
+	if (opt < 0 || opt > 10)
+		env->ThrowError("nnedi3_rpow2: opt must be in [0,10]!\n");
 	selectRequestedOpt(opt, env->GetCPUFlags(), env, "nnedi3_rpow2");
 	if (fapprox < 0 || fapprox > 15)
 		env->ThrowError("nnedi3_rpow2: fapprox must be [0,15]!\n");

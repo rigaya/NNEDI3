@@ -377,10 +377,6 @@ extern "C" void computeNetwork0_AVX512(
 extern "C" void computeNetwork0_i16_AVX512(
     const float* inputRaw, const float* weightsRaw, std::uint8_t* result)
 {
-    if (nnedi3_avx512_vnni_supported) {
-        computeNetwork0i16VNNI(inputRaw, weightsRaw, result);
-        return;
-    }
     const auto* input = reinterpret_cast<const std::int16_t*>(inputRaw);
     const auto* weights = reinterpret_cast<const std::int16_t*>(weightsRaw);
     const float* const floatWeights = reinterpret_cast<const float*>(weights + 192);
@@ -394,10 +390,6 @@ extern "C" void computeNetwork0_i16_AVX512(
 extern "C" void computeNetwork0new_AVX512(
     const float* inputRaw, const float* weightsRaw, std::uint8_t* result)
 {
-    if (nnedi3_avx512_vnni_supported) {
-        computeNetwork0newVNNI(inputRaw, weightsRaw, result);
-        return;
-    }
     const auto* input = reinterpret_cast<const std::int16_t*>(inputRaw);
     const auto* weights = reinterpret_cast<const std::int16_t*>(weightsRaw);
     const float* const floatWeights = reinterpret_cast<const float*>(weights + 256);
@@ -413,6 +405,20 @@ extern "C" void computeNetwork0new_AVX512(
         | ((nonNegative & 0x04u) << 14)
         | ((nonNegative & 0x08u) << 21);
     std::memcpy(result, &bytes, sizeof(bytes));
+}
+
+extern "C" NNEDI3_AVX512VNNI_TARGET
+void computeNetwork0_i16_AVX512VNNI(const float* input,
+    const float* weights, std::uint8_t* result)
+{
+    computeNetwork0i16VNNI(input, weights, result);
+}
+
+extern "C" NNEDI3_AVX512VNNI_TARGET
+void computeNetwork0new_AVX512VNNI(const float* input,
+    const float* weights, std::uint8_t* result)
+{
+    computeNetwork0newVNNI(input, weights, result);
 }
 
 #undef NNEDI3_AVX512VNNI_TARGET

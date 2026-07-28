@@ -4,12 +4,6 @@
 
 #include <cstddef>
 
-#if defined(_MSC_VER)
-#include <intrin.h>
-#else
-#include <cpuid.h>
-#endif
-
 #if defined(__GNUC__) || defined(__clang__)
 #define NNEDI3_AVX512VNNI_TARGET __attribute__((target("avx512vnni")))
 #else
@@ -66,19 +60,6 @@ __m128i horizontalSum4x16Int32(const __m512i sums0, const __m512i sums1,
             _mm_castsi128_ps(pair01), _mm_castsi128_ps(pair23), 0x88)),
         _mm_castps_si128(_mm_shuffle_ps(
             _mm_castsi128_ps(pair01), _mm_castsi128_ps(pair23), 0xdd)));
-}
-
-bool hasAVX512VNNI()
-{
-#if defined(_MSC_VER)
-    int registers[4]{};
-    __cpuidex(registers, 7, 0);
-    return (registers[2] & (1 << 11)) != 0;
-#else
-    unsigned int eax = 0, ebx = 0, ecx = 0, edx = 0;
-    return __get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx) != 0
-        && (ecx & (1u << 11)) != 0;
-#endif
 }
 
 NNEDI3_AVX512VNNI_TARGET
@@ -444,8 +425,6 @@ extern "C" std::uint32_t nnedi3_avx512_build_marker() noexcept
     return UINT32_C(0x41565835);
 }
 
-extern "C" const bool nnedi3_avx512_vnni_supported = hasAVX512VNNI();
-
 extern "C" void dotProd_m32_m16_AVX512(const float* data, const float* weights,
     float* vals, const int n, const int len, const float* istd)
 {
@@ -461,19 +440,27 @@ extern "C" void dotProd_m48_m16_AVX512(const float* data, const float* weights,
 extern "C" void dotProd_m32_m16_i16_AVX512(const float* data, const float* weights,
     float* vals, const int n, const int len, const float* istd)
 {
-    if (nnedi3_avx512_vnni_supported)
-        dotProdInt16AVX512VNNI(data, weights, vals, n, len, istd);
-    else
-        dotProdInt16AVX512(data, weights, vals, n, len, istd);
+    dotProdInt16AVX512(data, weights, vals, n, len, istd);
 }
 
 extern "C" void dotProd_m48_m16_i16_AVX512(const float* data, const float* weights,
     float* vals, const int n, const int len, const float* istd)
 {
-    if (nnedi3_avx512_vnni_supported)
-        dotProdInt16AVX512VNNI(data, weights, vals, n, len, istd);
-    else
-        dotProdInt16AVX512(data, weights, vals, n, len, istd);
+    dotProdInt16AVX512(data, weights, vals, n, len, istd);
+}
+
+extern "C" NNEDI3_AVX512VNNI_TARGET
+void dotProd_m32_m16_i16_AVX512VNNI(const float* data, const float* weights,
+    float* vals, const int n, const int len, const float* istd)
+{
+    dotProdInt16AVX512VNNI(data, weights, vals, n, len, istd);
+}
+
+extern "C" NNEDI3_AVX512VNNI_TARGET
+void dotProd_m48_m16_i16_AVX512VNNI(const float* data, const float* weights,
+    float* vals, const int n, const int len, const float* istd)
+{
+    dotProdInt16AVX512VNNI(data, weights, vals, n, len, istd);
 }
 
 extern "C" void e0_m16_AVX512(float* values, const int n)
