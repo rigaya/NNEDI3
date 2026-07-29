@@ -24,18 +24,6 @@ float horizontalSum16(const __m512 value)
     return _mm_cvtss_f32(sum4);
 }
 
-std::int32_t horizontalSum16xInt32(const __m512i value)
-{
-    // VPADDDと同じ32bit wrap加算だけで縮約し、AVX2版の整数値を保つ。
-    const __m256i sum8 = _mm256_add_epi32(
-        _mm512_castsi512_si256(value), _mm512_extracti64x4_epi64(value, 1));
-    __m128i sum4 = _mm_add_epi32(
-        _mm256_castsi256_si128(sum8), _mm256_extracti128_si256(sum8, 1));
-    sum4 = _mm_add_epi32(sum4, _mm_shuffle_epi32(sum4, 0x4e));
-    sum4 = _mm_add_epi32(sum4, _mm_shuffle_epi32(sum4, 0xb1));
-    return _mm_cvtsi128_si32(sum4);
-}
-
 __m128i horizontalSum4x16Int32(const __m512i sums0, const __m512i sums1,
     const __m512i sums2, const __m512i sums3)
 {
@@ -283,9 +271,8 @@ void dotProdInt16AVX512(const float* dataRaw, const float* weightsRaw,
                 _mm512_maskz_loadu_epi16(tailMask, tile + 3 * tailLength)));
         }
 
-        const __m128i integerSums = _mm_setr_epi32(
-            horizontalSum16xInt32(sums0), horizontalSum16xInt32(sums1),
-            horizontalSum16xInt32(sums2), horizontalSum16xInt32(sums3));
+        const __m128i integerSums = horizontalSum4x16Int32(
+            sums0, sums1, sums2, sums3);
         const __m128 converted = _mm_cvtepi32_ps(integerSums);
         const float* const groupScaleBias
             = scaleBias + static_cast<std::size_t>(neuron / 4) * 8;
