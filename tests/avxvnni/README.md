@@ -11,7 +11,8 @@
 | 9 | AVX512（VNNI不使用） |
 | 10 | AVX512-VNNI |
 
-`opt=0`はAVX-VNNI対応CPUで`opt=8`を自動選択します。AVX512系は自動選択せず、明示指定します。
+`opt=0`は利用可能なCPU機能に応じて、AVX512-VNNI、AVX512、AVX-VNNI、AVX2+FMA3の優先順で自動選択します。
+AVX512-VNNI経路でも入力長48の予測器だけは、後半16要素をYMMで処理するAVX512非VNNI専用カーネルを使用します。
 
 AVX-VNNIとAVX512-VNNIは別のCPU機能です。`avx512_vnni`だけを持つCPUでは`opt=8`を実行できません。CPUID上ではAVX-VNNIを`CPUID.(EAX=7,ECX=1):EAX[4]`で判定します。
 

@@ -50,6 +50,51 @@ __m128i horizontalSum4x16Int32(const __m512i sums0, const __m512i sums1,
             _mm_castsi128_ps(pair01), _mm_castsi128_ps(pair23), 0xdd)));
 }
 
+void dotProdInt16Len48AVX512(const std::int16_t* data,
+    const std::int16_t* weights, float* vals, const int n, const float istd)
+{
+    const __m512i data0 = _mm512_loadu_si512(data);
+    const __m256i data1 = _mm256_loadu_si256(
+        reinterpret_cast<const __m256i*>(data + 32));
+    const float* const scaleBias = reinterpret_cast<const float*>(
+        weights + static_cast<std::size_t>(n) * 48);
+    const __m128 inverseStdDev = _mm_set1_ps(istd);
+
+    for (int neuron = 0; neuron < n; neuron += 4) {
+        const std::int16_t* const group = weights
+            + static_cast<std::size_t>(neuron) * 48;
+        __m512i sums0 = _mm512_madd_epi16(
+            data0, _mm512_loadu_si512(group));
+        __m512i sums1 = _mm512_madd_epi16(
+            data0, _mm512_loadu_si512(group + 32));
+        __m512i sums2 = _mm512_madd_epi16(
+            data0, _mm512_loadu_si512(group + 64));
+        __m512i sums3 = _mm512_madd_epi16(
+            data0, _mm512_loadu_si512(group + 96));
+        sums0 = _mm512_add_epi32(sums0, _mm512_zextsi256_si512(
+            _mm256_madd_epi16(data1, _mm256_loadu_si256(
+                reinterpret_cast<const __m256i*>(group + 128)))));
+        sums1 = _mm512_add_epi32(sums1, _mm512_zextsi256_si512(
+            _mm256_madd_epi16(data1, _mm256_loadu_si256(
+                reinterpret_cast<const __m256i*>(group + 144)))));
+        sums2 = _mm512_add_epi32(sums2, _mm512_zextsi256_si512(
+            _mm256_madd_epi16(data1, _mm256_loadu_si256(
+                reinterpret_cast<const __m256i*>(group + 160)))));
+        sums3 = _mm512_add_epi32(sums3, _mm512_zextsi256_si512(
+            _mm256_madd_epi16(data1, _mm256_loadu_si256(
+                reinterpret_cast<const __m256i*>(group + 176)))));
+
+        const __m128 converted = _mm_cvtepi32_ps(
+            horizontalSum4x16Int32(sums0, sums1, sums2, sums3));
+        const float* const groupScaleBias = scaleBias
+            + static_cast<std::size_t>(neuron / 4) * 8;
+        const __m128 scaled = _mm_mul_ps(
+            converted, _mm_loadu_ps(groupScaleBias));
+        _mm_storeu_ps(vals + neuron, _mm_fmadd_ps(
+            scaled, inverseStdDev, _mm_loadu_ps(groupScaleBias + 4)));
+    }
+}
+
 NNEDI3_AVX512VNNI_TARGET
 void dotProdInt16Len128AVX512VNNI(const std::int16_t* data,
     const std::int16_t* weights, float* vals, const int n, const float istd)
@@ -104,6 +149,11 @@ void dotProdInt16AVX512VNNI(const float* dataRaw, const float* weightsRaw,
 {
     const auto* const data = reinterpret_cast<const std::int16_t*>(dataRaw);
     const auto* const weights = reinterpret_cast<const std::int16_t*>(weightsRaw);
+    // 48要素では後半16要素をYMMで処理する非VNNI版の方が速い。
+    if (len == 48) {
+        dotProdInt16Len48AVX512(data, weights, vals, n, *istd);
+        return;
+    }
     if (len == 128) {
         dotProdInt16Len128AVX512VNNI(data, weights, vals, n, *istd);
         return;
@@ -226,6 +276,10 @@ void dotProdInt16AVX512(const float* dataRaw, const float* weightsRaw,
 {
     const auto* const data = reinterpret_cast<const std::int16_t*>(dataRaw);
     const auto* const weights = reinterpret_cast<const std::int16_t*>(weightsRaw);
+    if (len == 48) {
+        dotProdInt16Len48AVX512(data, weights, vals, n, *istd);
+        return;
+    }
     const auto* const scaleBias = reinterpret_cast<const float*>(
         weights + static_cast<std::size_t>(n) * len);
     const __m128 inverseStdDev = _mm_set1_ps(*istd);

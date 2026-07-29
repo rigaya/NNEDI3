@@ -1,5 +1,6 @@
 #include "nnedi3_intrinsic_AVXVNNI.h"
 #include "nnedi3_intrinsic_AVX512.h"
+#include "nnedi3_backend.h"
 
 #include <algorithm>
 #include <chrono>
@@ -32,6 +33,27 @@ void dotProd_m48_m16_i16_AVX2(const float* data, const float* weights,
 }
 
 namespace {
+
+constexpr int avx512AndAvxVnni = nnedi3_backend::AVX512_REQUIRED
+    | nnedi3_backend::CPU_AVXVNNI;
+constexpr int allFourBackends = nnedi3_backend::AVX512VNNI_REQUIRED
+    | nnedi3_backend::CPU_AVXVNNI;
+static_assert(nnedi3_backend::select_windows_backend(
+    0, allFourBackends).normalized_opt == 10);
+static_assert(nnedi3_backend::select_windows_backend(
+    0, avx512AndAvxVnni).normalized_opt == 9);
+static_assert(nnedi3_backend::select_windows_backend(
+    0, nnedi3_backend::AVXVNNI_REQUIRED).normalized_opt == 8);
+static_assert(nnedi3_backend::select_windows_backend(
+    0, nnedi3_backend::CPU_AVX2 | nnedi3_backend::CPU_FMA3).normalized_opt == 6);
+static_assert(nnedi3_backend::select_linux_backend(
+    0, allFourBackends).normalized_opt == 10);
+static_assert(nnedi3_backend::select_linux_backend(
+    0, avx512AndAvxVnni).normalized_opt == 9);
+static_assert(nnedi3_backend::select_linux_backend(
+    0, nnedi3_backend::AVXVNNI_REQUIRED).normalized_opt == 8);
+static_assert(nnedi3_backend::select_linux_backend(
+    0, nnedi3_backend::CPU_AVX2 | nnedi3_backend::CPU_FMA3).normalized_opt == 6);
 
 constexpr int skippedExitCode = 77;
 volatile float benchmarkSink = 0.0f;

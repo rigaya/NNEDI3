@@ -139,6 +139,12 @@ constexpr BackendSelection select_windows_backend(const int requested_opt, const
         return {backend_from_legacy_opt(requested_opt), requested_opt, 0, SelectionError::None};
     }
 
+    if (has_all_features(cpu_flags, AVX512VNNI_REQUIRED)) {
+        return {Backend::AVX512VNNI, 10, 0, SelectionError::None};
+    }
+    if (has_all_features(cpu_flags, AVX512_REQUIRED)) {
+        return {Backend::AVX512, 9, 0, SelectionError::None};
+    }
     if (has_all_features(cpu_flags, AVXVNNI_REQUIRED)) {
         return {Backend::AVX2FMA3VNNI, 8, 0, SelectionError::None};
     }
@@ -178,6 +184,12 @@ constexpr BackendSelection select_linux_backend(const int requested_opt, const i
     }
 
     const bool has_avx2_fma3 = has_all_features(cpu_flags, CPU_AVX2 | CPU_FMA3);
+    if (requested_opt == 0 && has_all_features(cpu_flags, AVX512VNNI_REQUIRED)) {
+        return {Backend::AVX512VNNI, 10, 0, SelectionError::None};
+    }
+    if (requested_opt == 0 && has_all_features(cpu_flags, AVX512_REQUIRED)) {
+        return {Backend::AVX512, 9, 0, SelectionError::None};
+    }
     if (requested_opt == 0 && has_all_features(cpu_flags, AVXVNNI_REQUIRED)) {
         return {Backend::AVX2FMA3VNNI, 8, 0, SelectionError::None};
     }
