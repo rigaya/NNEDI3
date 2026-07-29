@@ -15,22 +15,29 @@
 namespace {
 
 NNEDI3_AVXVNNI_TARGET
-std::int32_t horizontalSum8xInt32(const __m256i value)
-{
-    __m128i sum = _mm_add_epi32(
-        _mm256_castsi256_si128(value), _mm256_extracti128_si256(value, 1));
-    sum = _mm_add_epi32(sum, _mm_shuffle_epi32(sum, 0x4e));
-    sum = _mm_add_epi32(sum, _mm_shuffle_epi32(sum, 0xb1));
-    return _mm_cvtsi128_si32(sum);
-}
-
-NNEDI3_AVXVNNI_TARGET
 __m128i horizontalSum4x8Int32(const __m256i sum0, const __m256i sum1,
     const __m256i sum2, const __m256i sum3)
 {
-    return _mm_setr_epi32(horizontalSum8xInt32(sum0),
-        horizontalSum8xInt32(sum1), horizontalSum8xInt32(sum2),
-        horizontalSum8xInt32(sum3));
+    const __m128i folded0 = _mm_add_epi32(_mm256_castsi256_si128(sum0),
+        _mm256_extracti128_si256(sum0, 1));
+    const __m128i folded1 = _mm_add_epi32(_mm256_castsi256_si128(sum1),
+        _mm256_extracti128_si256(sum1, 1));
+    const __m128i folded2 = _mm_add_epi32(_mm256_castsi256_si128(sum2),
+        _mm256_extracti128_si256(sum2, 1));
+    const __m128i folded3 = _mm_add_epi32(_mm256_castsi256_si128(sum3),
+        _mm256_extracti128_si256(sum3, 1));
+
+    const __m128i pair01 = _mm_add_epi32(
+        _mm_unpacklo_epi64(folded0, folded1),
+        _mm_unpackhi_epi64(folded0, folded1));
+    const __m128i pair23 = _mm_add_epi32(
+        _mm_unpacklo_epi64(folded2, folded3),
+        _mm_unpackhi_epi64(folded2, folded3));
+    return _mm_add_epi32(
+        _mm_castps_si128(_mm_shuffle_ps(_mm_castsi128_ps(pair01),
+            _mm_castsi128_ps(pair23), 0x88)),
+        _mm_castps_si128(_mm_shuffle_ps(_mm_castsi128_ps(pair01),
+            _mm_castsi128_ps(pair23), 0xdd)));
 }
 
 NNEDI3_AVXVNNI_TARGET
@@ -127,57 +134,60 @@ void dotProdInt16AVXVNNI(const float* dataRaw, const float* weightsRaw,
         weights + static_cast<std::size_t>(n) * len);
     const __m128 inverseStdDev = _mm_set1_ps(*istd);
 
-    for (int neuron = 0; neuron < n; neuron += 8) {
-        const std::int16_t* const group0 = weights
+    for (int neuron = 0; neuron < n; neuron += 4) {
+        const std::int16_t* const group = weights
             + static_cast<std::size_t>(neuron) * len;
-        const std::int16_t* const group1 = group0
-            + static_cast<std::size_t>(4) * len;
         __m256i sums0 = _mm256_setzero_si256();
         __m256i sums1 = _mm256_setzero_si256();
         __m256i sums2 = _mm256_setzero_si256();
         __m256i sums3 = _mm256_setzero_si256();
-        __m256i sums4 = _mm256_setzero_si256();
-        __m256i sums5 = _mm256_setzero_si256();
-        __m256i sums6 = _mm256_setzero_si256();
-        __m256i sums7 = _mm256_setzero_si256();
-        for (int sample = 0; sample < len; sample += 16) {
+        int sample = 0;
+        for (; sample + 32 <= len; sample += 32) {
+            const __m256i values0 = _mm256_loadu_si256(
+                reinterpret_cast<const __m256i*>(data + sample));
+            const __m256i values1 = _mm256_loadu_si256(
+                reinterpret_cast<const __m256i*>(data + sample + 16));
+            const std::int16_t* const tile = group
+                + static_cast<std::size_t>(sample) * 4;
+            sums0 = _mm256_dpwssd_avx_epi32(sums0, values0,
+                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile)));
+            sums1 = _mm256_dpwssd_avx_epi32(sums1, values0,
+                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile + 16)));
+            sums2 = _mm256_dpwssd_avx_epi32(sums2, values0,
+                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile + 32)));
+            sums3 = _mm256_dpwssd_avx_epi32(sums3, values0,
+                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile + 48)));
+            sums0 = _mm256_dpwssd_avx_epi32(sums0, values1,
+                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile + 64)));
+            sums1 = _mm256_dpwssd_avx_epi32(sums1, values1,
+                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile + 80)));
+            sums2 = _mm256_dpwssd_avx_epi32(sums2, values1,
+                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile + 96)));
+            sums3 = _mm256_dpwssd_avx_epi32(sums3, values1,
+                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile + 112)));
+        }
+        if (sample < len) {
             const __m256i values = _mm256_loadu_si256(
                 reinterpret_cast<const __m256i*>(data + sample));
-            const std::int16_t* const tile0 = group0
-                + static_cast<std::size_t>(sample) * 4;
-            const std::int16_t* const tile1 = group1
+            const std::int16_t* const tile = group
                 + static_cast<std::size_t>(sample) * 4;
             sums0 = _mm256_dpwssd_avx_epi32(sums0, values,
-                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile0)));
+                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile)));
             sums1 = _mm256_dpwssd_avx_epi32(sums1, values,
-                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile0 + 16)));
+                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile + 16)));
             sums2 = _mm256_dpwssd_avx_epi32(sums2, values,
-                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile0 + 32)));
+                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile + 32)));
             sums3 = _mm256_dpwssd_avx_epi32(sums3, values,
-                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile0 + 48)));
-            sums4 = _mm256_dpwssd_avx_epi32(sums4, values,
-                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile1)));
-            sums5 = _mm256_dpwssd_avx_epi32(sums5, values,
-                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile1 + 16)));
-            sums6 = _mm256_dpwssd_avx_epi32(sums6, values,
-                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile1 + 32)));
-            sums7 = _mm256_dpwssd_avx_epi32(sums7, values,
-                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile1 + 48)));
+                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(tile + 48)));
         }
-        const __m128 converted0 = _mm_cvtepi32_ps(
+        const __m128 converted = _mm_cvtepi32_ps(
             horizontalSum4x8Int32(sums0, sums1, sums2, sums3));
-        const __m128 converted1 = _mm_cvtepi32_ps(
-            horizontalSum4x8Int32(sums4, sums5, sums6, sums7));
         const float* const groupScaleBias = scaleBias
             + static_cast<std::size_t>(neuron / 4) * 8;
-        const __m128 scaled0 = _mm_mul_ps(
-            converted0, _mm_loadu_ps(groupScaleBias));
-        const __m128 scaled1 = _mm_mul_ps(
-            converted1, _mm_loadu_ps(groupScaleBias + 8));
+        const __m128 scaled = _mm_mul_ps(
+            converted, _mm_loadu_ps(groupScaleBias));
         _mm_storeu_ps(vals + neuron, _mm_fmadd_ps(
-            scaled0, inverseStdDev, _mm_loadu_ps(groupScaleBias + 4)));
-        _mm_storeu_ps(vals + neuron + 4, _mm_fmadd_ps(
-            scaled1, inverseStdDev, _mm_loadu_ps(groupScaleBias + 12)));
+            scaled, inverseStdDev, _mm_loadu_ps(groupScaleBias + 4)));
     }
     _mm256_zeroupper();
 }
