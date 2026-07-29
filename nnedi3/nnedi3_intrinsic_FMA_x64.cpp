@@ -9,7 +9,7 @@
 namespace {
 
 // From .data section
-const float FLT_EPSILON = 1.192092896e-07f;
+const float NNEDI3_FLT_EPSILON = 1.192092896e-07f;
 
 // align 16
 // sign_bits_f_zero_l qword 7FFFFFFF00000000h,7FFFFFFF7FFFFFFFh
@@ -27,7 +27,7 @@ alignas(16) const __m128 sign_bits_f = _mm_castsi128_ps(_mm_set1_epi32(0x7FFFFFF
 alignas(16) const __m128 ones_f = _mm_set1_ps(1.0f);
 
 // flt_epsilon_sse real4 4 dup(FLT_EPSILON)
-alignas(16) const __m128 flt_epsilon_sse = _mm_set1_ps(FLT_EPSILON);
+alignas(16) const __m128 flt_epsilon_sse = _mm_set1_ps(NNEDI3_FLT_EPSILON);
 
 // min_weight_sum real4 4 dup(1.0e-10)
 alignas(16) const __m128 min_weight_sum = _mm_set1_ps(1.0e-10f);
@@ -2620,7 +2620,7 @@ extern "C" void extract_m8_FMA3(
     const __m128 average_square = _mm_div_ss(sumsq, count);
     const __m128 variance = _mm_fnmadd_ss(mean, mean, average_square);
     _mm_store_ss(mstd, mean);
-    if (!(_mm_cvtss_f32(variance) > FLT_EPSILON)) {
+    if (!(_mm_cvtss_f32(variance) > NNEDI3_FLT_EPSILON)) {
         mstd[1] = 0.0f;
         mstd[2] = 0.0f;
     } else {
@@ -2829,7 +2829,7 @@ extern "C" void extract_m8_i16_AVX2(
     _mm_store_ss((float*)mstd, xmm4);
     xmm5 = _mm_fnmadd_ss(xmm4, xmm4, xmm5);
 
-    if (!(_mm_cvtss_f32(xmm5) > FLT_EPSILON)) {
+    if (!(_mm_cvtss_f32(xmm5) > NNEDI3_FLT_EPSILON)) {
         // novarjmp_2
         _mm_store_ss(mstd + 1, _mm256_castps256_ps128(_mm256_castsi256_ps(ymm6)));
         _mm_store_ss(mstd + 2, _mm256_castps256_ps128(_mm256_castsi256_ps(ymm6)));
@@ -2995,7 +2995,7 @@ extern "C" void extract_m8_i16_AVX2_16(
     const float var = std::fma(-mean, mean, averageSquare);
 
     mstd[0] = mean;              // 平均
-    if (!(var > FLT_EPSILON)) {
+    if (!(var > NNEDI3_FLT_EPSILON)) {
         mstd[1] = 0.0f;          // 標準偏差
         mstd[2] = 0.0f;          // 1/標準偏差
     } else {
@@ -3277,7 +3277,7 @@ void extract_m8_FMA3_16(
     const __m128 variance = _mm_fnmadd_ss(mean, mean, average_square);
 
     mstd[0] = _mm_cvtss_f32(mean);
-    if (!(_mm_cvtss_f32(variance) > FLT_EPSILON)) {
+    if (!(_mm_cvtss_f32(variance) > NNEDI3_FLT_EPSILON)) {
         mstd[1] = 0.0f;
         mstd[2] = 0.0f;
     } else {
@@ -3346,7 +3346,7 @@ void extract_m8_FMA3_32(
     const __m128 variance = _mm_fnmadd_ss(mean, mean, average_square);
 
     mstd[0] = _mm_cvtss_f32(mean);
-    if (!(_mm_cvtss_f32(variance) > FLT_EPSILON)) {
+    if (!(_mm_cvtss_f32(variance) > NNEDI3_FLT_EPSILON)) {
         mstd[1] = 0.0f;
         mstd[2] = 0.0f;
     } else {
