@@ -1,4 +1,5 @@
 #include "nnedi3_intrinsic_AVXVNNI.h"
+#include "nnedi3_intrinsic_AVX512.h"
 
 #include <algorithm>
 #include <chrono>
@@ -37,9 +38,12 @@ volatile float benchmarkSink = 0.0f;
 
 struct CpuFeatures {
     bool avxState;
+    bool avx512State;
     bool fma3;
     bool avx2;
     bool avxVnni;
+    bool avx512;
+    bool avx512Vnni;
 };
 
 void cpuid(int registers[4], const int leaf, const int subleaf)
@@ -81,17 +85,25 @@ CpuFeatures detectCpuFeatures()
     const bool avx = (registers[2] & (1 << 28)) != 0;
     const bool fma3 = (registers[2] & (1 << 12)) != 0;
     const bool avxState = osxsave && avx && (xgetbv0() & 0x06u) == 0x06u;
-    if (maximumLeaf < 7) return {avxState, fma3, false, false};
+    const std::uint64_t xcr0 = osxsave ? xgetbv0() : 0;
+    const bool avx512State = avxState && (xcr0 & 0xe0u) == 0xe0u;
+    if (maximumLeaf < 7)
+        return {avxState, avx512State, fma3, false, false, false, false};
 
     cpuid(registers, 7, 0);
     const int maximumSubleaf = registers[0];
     const bool avx2 = (registers[1] & (1 << 5)) != 0;
+    const int avx512Mask = (1 << 16) | (1 << 17) | (1 << 30)
+        | static_cast<int>(1u << 31);
+    const bool avx512 = (registers[1] & avx512Mask) == avx512Mask;
+    const bool avx512Vnni = (registers[2] & (1 << 11)) != 0;
     bool avxVnni = false;
     if (maximumSubleaf >= 1) {
         cpuid(registers, 7, 1);
         avxVnni = (registers[0] & (1 << 4)) != 0;
     }
-    return {avxState, fma3, avx2, avxVnni};
+    return {avxState, avx512State, fma3, avx2, avxVnni,
+        avx512, avx512Vnni};
 }
 
 template<typename T>
@@ -127,6 +139,19 @@ DotProduct avxVnniDotProduct(const int length)
         ? dotProd_m48_m16_i16_AVXVNNI : dotProd_m32_m16_i16_AVXVNNI;
 }
 
+DotProduct avx512DotProduct(const int length)
+{
+    return length == 48
+        ? dotProd_m48_m16_i16_AVX512 : dotProd_m32_m16_i16_AVX512;
+}
+
+DotProduct avx512VnniDotProduct(const int length)
+{
+    return length == 48
+        ? dotProd_m48_m16_i16_AVX512VNNI
+        : dotProd_m32_m16_i16_AVX512VNNI;
+}
+
 bool sameFloats(const float* left, const float* right, const int count)
 {
     return std::memcmp(left, right,
@@ -160,6 +185,8 @@ bool testPredictor(std::mt19937& random)
                 + static_cast<std::size_t>(neurons) * sizeof(float));
             AlignedBuffer<float> avx2(neurons);
             AlignedBuffer<float> avxVnni(neurons);
+            AlignedBuffer<float> avx512(neurons);
+            AlignedBuffer<float> avx512Vnni(neurons);
             float* const scaleBias = reinterpret_cast<float*>(
                 weights.data() + static_cast<std::size_t>(neurons) * length);
             const float inverseStdDev = 0.003f;
@@ -177,16 +204,29 @@ bool testPredictor(std::mt19937& random)
                     reinterpret_cast<float*>(input.data()),
                     reinterpret_cast<float*>(weights.data()), avxVnni.data(),
                     neurons, length, &inverseStdDev);
+                avx512DotProduct(length)(reinterpret_cast<float*>(input.data()),
+                    reinterpret_cast<float*>(weights.data()), avx512.data(),
+                    neurons, length, &inverseStdDev);
+                avx512VnniDotProduct(length)(
+                    reinterpret_cast<float*>(input.data()),
+                    reinterpret_cast<float*>(weights.data()), avx512Vnni.data(),
+                    neurons, length, &inverseStdDev);
                 if (!sameFloats(avx2.data(), avxVnni.data(), neurons)) {
                     std::fprintf(stderr,
                         "予測器が不一致です: len=%d, n=%d, trial=%d\n",
                         length, neurons, trial);
                     return false;
                 }
+                if (!sameFloats(avx512.data(), avx512Vnni.data(), neurons)) {
+                    std::fprintf(stderr,
+                        "AVX512予測器が不一致です: len=%d, n=%d, trial=%d\n",
+                        length, neurons, trial);
+                    return false;
+                }
             }
         }
     }
-    std::puts("予測器: AVX2とAVX-VNNIの出力がbit単位で一致しました");
+    std::puts("予測器: AVX2とAVX-VNNI、AVX512とAVX512-VNNIの出力がbit単位で一致しました");
     return true;
 }
 
@@ -259,64 +299,53 @@ double measurePredictor(const DotProduct function, const int iterations,
 
 void runBenchmark(const int iterations, std::mt19937& random)
 {
-    constexpr int length = 128;
     constexpr int neurons = 64;
     constexpr int rounds = 9;
-    AlignedBuffer<std::int16_t> input(length);
-    AlignedBuffer<std::int16_t> weights(
-        static_cast<std::size_t>(neurons) * length
-        + static_cast<std::size_t>(neurons) * sizeof(float));
-    AlignedBuffer<float> output(neurons);
-    float* const scaleBias = reinterpret_cast<float*>(
-        weights.data() + static_cast<std::size_t>(neurons) * length);
-    const float inverseStdDev = 0.003f;
-    fillIntegers(input.data(), length, random);
-    fillIntegers(weights.data(), static_cast<std::size_t>(neurons) * length,
-        random);
-    fillFloats(scaleBias, static_cast<std::size_t>(neurons) * 2, random);
+    std::printf("4経路予測器ベンチマーク: n=%d, %d回 x %dラウンド（中央値）\n",
+        neurons, iterations, rounds);
+    std::puts("  len   AVX2+FMA3   AVX-VNNI      AVX512  AVX512-VNNI");
+    for (const int length : {32, 48, 64, 96, 128, 192, 288}) {
+        AlignedBuffer<std::int16_t> input(length);
+        AlignedBuffer<std::int16_t> weights(
+            static_cast<std::size_t>(neurons) * length
+            + static_cast<std::size_t>(neurons) * sizeof(float));
+        AlignedBuffer<float> output(neurons);
+        float* const scaleBias = reinterpret_cast<float*>(
+            weights.data() + static_cast<std::size_t>(neurons) * length);
+        const float inverseStdDev = 0.003f;
+        fillIntegers(input.data(), length, random);
+        fillIntegers(weights.data(), static_cast<std::size_t>(neurons) * length,
+            random);
+        fillFloats(scaleBias, static_cast<std::size_t>(neurons) * 2, random);
 
-    for (int i = 0; i < 200; ++i) {
-        avx2DotProduct(length)(reinterpret_cast<float*>(input.data()),
-            reinterpret_cast<float*>(weights.data()), output.data(),
-            neurons, length, &inverseStdDev);
-        avxVnniDotProduct(length)(reinterpret_cast<float*>(input.data()),
-            reinterpret_cast<float*>(weights.data()), output.data(),
-            neurons, length, &inverseStdDev);
-    }
-
-    std::vector<double> avx2Times;
-    std::vector<double> avxVnniTimes;
-    for (int round = 0; round < rounds; ++round) {
-        const auto measureAvx2 = [&]() {
-            avx2Times.push_back(measurePredictor(avx2DotProduct(length),
-                iterations, reinterpret_cast<float*>(input.data()),
-                reinterpret_cast<float*>(weights.data()), output.data(),
-                neurons, length, &inverseStdDev));
-        };
-        const auto measureAvxVnni = [&]() {
-            avxVnniTimes.push_back(measurePredictor(avxVnniDotProduct(length),
-                iterations, reinterpret_cast<float*>(input.data()),
-                reinterpret_cast<float*>(weights.data()), output.data(),
-                neurons, length, &inverseStdDev));
-        };
-        if ((round & 1) == 0) {
-            measureAvx2();
-            measureAvxVnni();
-        } else {
-            measureAvxVnni();
-            measureAvx2();
+        const DotProduct functions[] = {avx2DotProduct(length),
+            avxVnniDotProduct(length), avx512DotProduct(length),
+            avx512VnniDotProduct(length)};
+        for (int i = 0; i < 200; ++i) {
+            for (const DotProduct function : functions)
+                function(reinterpret_cast<float*>(input.data()),
+                    reinterpret_cast<float*>(weights.data()), output.data(),
+                    neurons, length, &inverseStdDev);
         }
+
+        std::vector<double> times[4];
+        for (int round = 0; round < rounds; ++round) {
+            for (int order = 0; order < 4; ++order) {
+                const int index = (round & 1) == 0 ? order : 3 - order;
+                times[index].push_back(measurePredictor(functions[index],
+                    iterations, reinterpret_cast<float*>(input.data()),
+                    reinterpret_cast<float*>(weights.data()), output.data(),
+                    neurons, length, &inverseStdDev));
+            }
+        }
+        double medians[4]{};
+        for (int i = 0; i < 4; ++i) {
+            std::sort(times[i].begin(), times[i].end());
+            medians[i] = times[i][rounds / 2];
+        }
+        std::printf("  %3d %10.2f %10.2f %11.2f %13.2f ns/call\n",
+            length, medians[0], medians[1], medians[2], medians[3]);
     }
-    std::sort(avx2Times.begin(), avx2Times.end());
-    std::sort(avxVnniTimes.begin(), avxVnniTimes.end());
-    const double avx2Median = avx2Times[rounds / 2];
-    const double avxVnniMedian = avxVnniTimes[rounds / 2];
-    std::printf("予測器ベンチマーク: len=%d, n=%d, %d回 x %dラウンド\n",
-        length, neurons, iterations, rounds);
-    std::printf("  AVX2+FMA3       : %.2f ns/call\n", avx2Median);
-    std::printf("  AVX2+FMA3+VNNI  : %.2f ns/call\n", avxVnniMedian);
-    std::printf("  AVX-VNNI / AVX2 : %.2f%%（小さいほど高速）\n",
-        avxVnniMedian * 100.0 / avx2Median);
 }
 
 } // 無名名前空間
@@ -343,12 +372,16 @@ int main(const int argc, char** argv)
     }
 
     const CpuFeatures features = detectCpuFeatures();
-    std::printf("CPU機能: AVX状態=%s, AVX2=%s, FMA3=%s, AVX-VNNI=%s\n",
+    std::printf("CPU機能: AVX状態=%s, AVX2=%s, FMA3=%s, AVX-VNNI=%s, "
+        "AVX512状態=%s, AVX512=%s, AVX512-VNNI=%s\n",
         features.avxState ? "yes" : "no", features.avx2 ? "yes" : "no",
-        features.fma3 ? "yes" : "no", features.avxVnni ? "yes" : "no");
+        features.fma3 ? "yes" : "no", features.avxVnni ? "yes" : "no",
+        features.avx512State ? "yes" : "no", features.avx512 ? "yes" : "no",
+        features.avx512Vnni ? "yes" : "no");
     if (!features.avxState || !features.avx2 || !features.fma3
-        || !features.avxVnni) {
-        std::puts("AVX2+FMA3+AVX-VNNIの実行条件を満たさないためスキップします");
+        || !features.avxVnni || !features.avx512State || !features.avx512
+        || !features.avx512Vnni) {
+        std::puts("4経路比較の実行条件を満たさないためスキップします");
         return skippedExitCode;
     }
 

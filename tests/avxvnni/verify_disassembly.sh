@@ -21,10 +21,10 @@ if [[ "${vex_count}" -eq 0 ]]; then
     echo "VEX形式のVPDPWSSD ymmを確認できませんでした" >&2
     exit 1
 fi
-if [[ "${zmm_count}" -ne 0 ]]; then
-    echo "AVX-VNNIテストへVPDPWSSD zmmが混入しています" >&2
+if [[ "${zmm_count}" -eq 0 ]]; then
+    echo "EVEX形式のVPDPWSSD zmmを確認できませんでした" >&2
     exit 1
 fi
 
 echo "VEX形式のVPDPWSSD ymmを${vex_count}命令確認しました"
-echo "VPDPWSSD zmmの混入はありません"
+echo "EVEX形式のVPDPWSSD zmmを${zmm_count}命令確認しました"

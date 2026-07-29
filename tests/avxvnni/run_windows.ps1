@@ -20,11 +20,11 @@ $ZmmInstructions = @($Disassembly | Select-String -Pattern "vpdpwssd.*zmm")
 if ($YmmInstructions.Count -eq 0) {
     throw "VPDPWSSD ymmを確認できませんでした"
 }
-if ($ZmmInstructions.Count -ne 0) {
-    throw "AVX-VNNIテストへVPDPWSSD zmmが混入しています"
+if ($ZmmInstructions.Count -eq 0) {
+    throw "VPDPWSSD zmmを確認できませんでした"
 }
 Write-Host "VPDPWSSD ymmを$($YmmInstructions.Count)命令確認しました"
-Write-Host "VPDPWSSD zmmの混入はありません"
+Write-Host "VPDPWSSD zmmを$($ZmmInstructions.Count)命令確認しました"
 
 meson test -C $BuildDir --benchmark --verbose
 exit $LASTEXITCODE

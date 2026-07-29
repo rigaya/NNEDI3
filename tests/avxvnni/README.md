@@ -1,4 +1,4 @@
-# AVX-VNNI経路のテスト手順
+# AVX2・AVX-VNNI・AVX512経路のテスト手順
 
 ## 対象
 
@@ -17,21 +17,21 @@ AVX-VNNIとAVX512-VNNIは別のCPU機能です。`avx512_vnni`だけを持つCPU
 
 ## 自動テストの内容
 
-`avxvnni_test.cpp`は、実行前にOSのAVX状態、AVX2、FMA3、AVX-VNNIを確認します。条件を満たさない場合はSIGILLを起こさず、終了コード77でスキップします。
+`avxvnni_test.cpp`は、実行前にOSのAVX/AVX512状態と、AVX2、FMA3、AVX-VNNI、AVX512、AVX512-VNNIを確認します。条件を満たさない場合はSIGILLを起こさず、終了コード77でスキップします。
 
 対応CPUでは次を実行します。
 
-- NNEDI3で使用する全入力長（32、48、64、96、128、192、288）とニューロン数で、AVX2とAVX-VNNI予測器のfloat出力をbit単位で比較
+- NNEDI3で使用する全入力長（32、48、64、96、128、192、288）とニューロン数で、AVX2とAVX-VNNI、AVX512とAVX512-VNNI予測器のfloat出力をbit単位で比較
 - 旧prescreenerを1万入力比較
 - 新prescreenerを1万入力比較
-- `len=128, n=64`の予測器を9ラウンド測定し、中央値を表示
-- 生成物を逆アセンブルし、VEX形式の`VPDPWSSD ymm`が存在し、`VPDPWSSD zmm`が混入していないことを確認
+- 全入力長、`n=64`でAVX2+FMA3、AVX-VNNI、AVX512、AVX512-VNNI予測器を9ラウンド測定し、中央値を表形式で表示
+- 生成物を逆アセンブルし、VEX形式の`VPDPWSSD ymm`とEVEX形式の`VPDPWSSD zmm`が存在することを確認
 
 テストデータの乱数seedは固定しているため、別環境でも同じ入力を使用します。
 
 ## 必要なもの
 
-- AVX2、FMA3、AVX-VNNI対応CPU
+- AVX2、FMA3、AVX-VNNI、AVX512F/BW/DQ/VL、AVX512-VNNI対応CPU
 - C++17対応コンパイラ
 - MesonとNinja
 - Linuxの逆アセンブル確認ではGNU `objdump`
@@ -43,7 +43,7 @@ Linuxでは事前確認として次を実行できます。
 lscpu | grep -oE 'avx_vnni|avx512_vnni' | sort -u
 ```
 
-`avx_vnni`が必要です。`avx512_vnni`だけが表示される環境はAVX-VNNIテスト対象外です。
+4経路比較には`avx_vnni`と`avx512_vnni`の両方が必要です。
 
 ## Linux
 
@@ -157,9 +157,11 @@ OS:
 AVX-VNNIの検出結果:
 出力一致テスト:
 VEX VPDPWSSD ymmの確認数:
-AVX2+FMA3の中央値:
-AVX2+FMA3+AVX-VNNIの中央値:
-AVX-VNNI / AVX2比率:
+EVEX VPDPWSSD zmmの確認数:
+全入力長のAVX2+FMA3中央値:
+全入力長のAVX-VNNI中央値:
+全入力長のAVX512中央値:
+全入力長のAVX512-VNNI中央値:
 実映像のpscrn=0/1/2のhash:
 ```
 
