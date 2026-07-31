@@ -1,0 +1,56 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.db-shm
+*.VC.db-wal
+ipch/
+*.aps
+*.ncb
+*.opendb
+*.opensdf
+*.sdf
+*.cachefile
+
+# MSBuild / compiler outputs
+[Dd]ebug/
+[Rr]elease/
+[Rr]elease_*/
+x64/
+[Ww]in32/
+[Bb]in/
+[Oo]bj/
+*.obj
+*.o
+*.pch
+*.pdb
+*.idb
+*.ilk
+*.iobj
+*.ipdb
+*.pgc
+*.pgd
+*.exp
+*.lib
+*.dll
+*.exe
+*.res
+*.recipe
+*.log
+*.tlog
+*.lastbuildstate
+*.FileListAbsolute.txt
+*.Build.CppClean.log
+
+# Meson
+/build/
+/builddir/
+meson-private/
+meson-logs/
+.meson/
+
+# Tests / local build dirs
+tests/**/build/

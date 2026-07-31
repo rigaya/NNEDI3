@@ -1,4 +1,4 @@
-/*
+ï»¿/*
 **                    nnedi3 v0.9.4.65 for Avs+/Avisynth 2.6.x
 **
 **   Copyright (C) 2010-2011 Kevin Stone
@@ -262,16 +262,16 @@ static_assert(nnedi3_backend::CPU_AVX512BW == CPUF_AVX512BW, "CPUF_AVX512BW mism
 static_assert(nnedi3_backend::CPU_AVX512VL == CPUF_AVX512VL, "CPUF_AVX512VL mismatch");
 
 #if !(defined(_WIN32) || defined(_WIN64))
-// Linux ‚Å‚Í CAAVX2+FMA3AAVX-VNNIAAVX512Œn‚¾‚¯‚ğŒöŠJ‚·‚éB
-static_assert(nnedi3_backend::select_linux_backend(0, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 6, "Linux ‚Ì©“®‘I‘ğ‚Å AVX2+FMA3 ‚ğ‘I‚×‚Ü‚¹‚ñ");
-static_assert(nnedi3_backend::select_linux_backend(0, CPUF_AVX2 | CPUF_FMA3 | nnedi3_backend::CPU_AVXVNNI).normalized_opt == 8, "Linux ‚Ì©“®‘I‘ğ‚Å AVX-VNNI ‚ğ‘I‚×‚Ü‚¹‚ñ");
-static_assert(nnedi3_backend::select_linux_backend(0, CPUF_AVX2).normalized_opt == 1, "Linux ‚Å FMA3 ‚È‚µ‚Ì AVX2 ‚ğ‘I‘ğ‚µ‚Ä‚¢‚Ü‚·");
-static_assert(nnedi3_backend::select_linux_backend(4, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 1, "Linux ‚Ì opt=2,3,4 ‚Í C ‚Ö³‹K‰»‚·‚é•K—v‚ª‚ ‚è‚Ü‚·");
-static_assert(nnedi3_backend::select_linux_backend(5, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 6, "Linux ‚Ì opt=5 ‚Í AVX2+FMA3 ‚Ö³‹K‰»‚·‚é•K—v‚ª‚ ‚è‚Ü‚·");
-static_assert(nnedi3_backend::select_linux_backend(7, CPUF_FMA3).normalized_opt == 1, "Linux ‚Å AVX2 ‚È‚µ‚Ì FMA3 ‚ğ‘I‘ğ‚µ‚Ä‚¢‚Ü‚·");
-static_assert(!nnedi3_backend::uses_simd_layout(nnedi3_backend::kernel_set_from_opt(1).predictor_weights), "C ”Å‚É‚Í neuron-major ‚Ìd‚İ‚ª•K—v‚Å‚·");
-static_assert(nnedi3_backend::uses_avx2_layout(nnedi3_backend::kernel_set_from_opt(6).predictor_weights), "AVX2+FMA3 ”Å‚É‚Í AVX2 ”z—ñ‚Ìd‚İ‚ª•K—v‚Å‚·");
-static_assert(nnedi3_backend::uses_avx2_layout(nnedi3_backend::kernel_set_from_opt(8).predictor_weights), "AVX-VNNI ”Å‚É‚Í AVX2 ”z—ñ‚Ìd‚İ‚ª•K—v‚Å‚·");
+// Linux ï¿½Å‚ï¿½ Cï¿½AAVX2+FMA3ï¿½AAVX-VNNIï¿½AAVX512ï¿½nï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Jï¿½ï¿½ï¿½ï¿½B
+static_assert(nnedi3_backend::select_linux_backend(0, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 6, "Linux ï¿½Ìï¿½ï¿½ï¿½ï¿½Iï¿½ï¿½ï¿½ AVX2+FMA3 ï¿½ï¿½Iï¿½×‚Ü‚ï¿½ï¿½ï¿½");
+static_assert(nnedi3_backend::select_linux_backend(0, CPUF_AVX2 | CPUF_FMA3 | nnedi3_backend::CPU_AVXVNNI).normalized_opt == 8, "Linux ï¿½Ìï¿½ï¿½ï¿½ï¿½Iï¿½ï¿½ï¿½ AVX-VNNI ï¿½ï¿½Iï¿½×‚Ü‚ï¿½ï¿½ï¿½");
+static_assert(nnedi3_backend::select_linux_backend(0, CPUF_AVX2).normalized_opt == 1, "Linux ï¿½ï¿½ FMA3 ï¿½È‚ï¿½ï¿½ï¿½ AVX2 ï¿½ï¿½Iï¿½ï¿½ï¿½ï¿½Ä‚ï¿½ï¿½Ü‚ï¿½");
+static_assert(nnedi3_backend::select_linux_backend(4, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 1, "Linux ï¿½ï¿½ opt=2,3,4 ï¿½ï¿½ C ï¿½Öï¿½ï¿½Kï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Kï¿½vï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ü‚ï¿½");
+static_assert(nnedi3_backend::select_linux_backend(5, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 6, "Linux ï¿½ï¿½ opt=5 ï¿½ï¿½ AVX2+FMA3 ï¿½Öï¿½ï¿½Kï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Kï¿½vï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ü‚ï¿½");
+static_assert(nnedi3_backend::select_linux_backend(7, CPUF_FMA3).normalized_opt == 1, "Linux ï¿½ï¿½ AVX2 ï¿½È‚ï¿½ï¿½ï¿½ FMA3 ï¿½ï¿½Iï¿½ï¿½ï¿½ï¿½Ä‚ï¿½ï¿½Ü‚ï¿½");
+static_assert(!nnedi3_backend::uses_simd_layout(nnedi3_backend::kernel_set_from_opt(1).predictor_weights), "C ï¿½Å‚É‚ï¿½ neuron-major ï¿½Ìdï¿½İ‚ï¿½ï¿½Kï¿½vï¿½Å‚ï¿½");
+static_assert(nnedi3_backend::uses_avx2_layout(nnedi3_backend::kernel_set_from_opt(6).predictor_weights), "AVX2+FMA3 ï¿½Å‚É‚ï¿½ AVX2 ï¿½zï¿½ï¿½Ìdï¿½İ‚ï¿½ï¿½Kï¿½vï¿½Å‚ï¿½");
+static_assert(nnedi3_backend::uses_avx2_layout(nnedi3_backend::kernel_set_from_opt(8).predictor_weights), "AVX-VNNI ï¿½Å‚É‚ï¿½ AVX2 ï¿½zï¿½ï¿½Ìdï¿½İ‚ï¿½ï¿½Kï¿½vï¿½Å‚ï¿½");
 #endif
 
 static constexpr Platform currentPlatform()
@@ -694,7 +694,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 		if (threads>1) poolInterface->DeAllocateAllThreads(true);
 		env->ThrowError("nnedi3: unable to get module handle!");
 	}
-	HRSRC hrsrc = FindResource(hmod,MAKEINTRESOURCE(101),_T("BINARY"));
+	HRSRC hrsrc = FindResource(hmod,MAKEINTRESOURCE(101),"BINARY");
 	HGLOBAL hglob = LoadResource(hmod,hrsrc);
 	LPVOID lplock = LockResource(hglob);
 	DWORD dwSize = SizeofResource(hmod,hrsrc);
@@ -1053,7 +1053,7 @@ nnedi3::nnedi3(PClip _child,int _field,bool _dh,bool _Y,bool _U,bool _V,bool _A,
 				j_d++;
 			}
 
-      // CUDA—p‚É•À‚×‘Ö‚¦‘O‚Ìƒf[ƒ^‚ğæ‚Á‚Ä‚¨‚­
+      // CUDAï¿½pï¿½É•ï¿½ï¿½×‘Ö‚ï¿½ï¿½Oï¿½Ìƒfï¿½[ï¿½^ï¿½ï¿½ï¿½ï¿½ï¿½Ä‚ï¿½ï¿½ï¿½
 
 			if (nnedi3_backend::uses_simd_layout(predictorPlan.layout)) // shuffle weight order for asm
 			{
@@ -1732,7 +1732,7 @@ void dotProdS_C(const float *dataf, const float *weightsf, float *vals, const in
 			sumBits += (uint32_t)((int32_t)data[j]*(int32_t)weights[j]);
 
 		int32_t sum;
-		// SIMD”Å‚Æ“¯‚¶32bit wrapŒ‹‰Ê‚ğA–¢’è‹`“®ì‚È‚µ‚Å•„†•t‚«’l‚Ö–ß‚·B
+		// SIMDï¿½Å‚Æ“ï¿½ï¿½ï¿½32bit wrapï¿½ï¿½ï¿½Ê‚ï¿½Aï¿½ï¿½ï¿½ï¿½`ï¿½ï¿½ï¿½ï¿½È‚ï¿½ï¿½Å•ï¿½ï¿½ï¿½ï¿½tï¿½ï¿½ï¿½lï¿½Ö–ß‚ï¿½ï¿½B
 		std::memcpy(&sum,&sumBits,sizeof(sum));
 		vals[i] = sum*wf[off]*(*scale)+wf[off+4];
 		weights += len;

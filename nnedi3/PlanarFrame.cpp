@@ -1,4 +1,4 @@
-/*
+ï»¿/*
 **   My PlanarFrame class... fast mmx/sse2 YUY2 packed to planar and planar 
 **   to packed conversions, and always gives 16 bit alignment for all
 **   planes.  Supports Y8/YV12/YV16/YV24/YUY2/RGB24 frames from avisynth, can do any planar
@@ -53,7 +53,7 @@ extern "C" void conv422toYUY2_AVX(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *d
 #define IS_BIT_SET(bitfield, bit) ((bitfield) & (1<<(bit)) ? true : false)
 
 #if !defined(_WIN32) && !defined(_WIN64)
-// Linux—p‚ÌcpuidŽÀ‘•
+// Linuxç”¨ã®cpuidå®Ÿè£…
 static void __cpuid(int cpuinfo[4], int leaf) {
   __asm__ __volatile__ (
     "cpuid"
@@ -62,7 +62,7 @@ static void __cpuid(int cpuinfo[4], int leaf) {
   );
 }
 
-// Linux—p‚ÌxgetbvŽÀ‘•
+// Linuxç”¨ã®xgetbvå®Ÿè£…
 static unsigned long long __xgetbv__(unsigned int index) {
   unsigned int eax, edx;
   __asm__ __volatile__ (
@@ -125,9 +125,9 @@ static int CPUCheckForExtensions()
         result |= CPUF_AVX2;
     }
     if (nnedi3_cpu_detail::Xcr0HasAvx512State(xgetbv0)) {
-      // Verify that XCR0[7:5] = E11bE(OPMASK state, upper 256-bit of ZMM0-ZMM15 and
+      // Verify that XCR0[7:5] = æˆ²11bæˆ²(OPMASK state, upper 256-bit of ZMM0-ZMM15 and
       // ZMM16-ZMM31 state are enabled by OS)
-      /// and that XCR0[2:1] = E1bE(XMM state and YMM state are enabled by OS).
+      /// and that XCR0[2:1] = æˆ²1bæˆ²(XMM state and YMM state are enabled by OS).
       __cpuid(cpuinfo, 7);
       if (IS_BIT_SET(cpuinfo[1], 16))
         result |= CPUF_AVX512F;

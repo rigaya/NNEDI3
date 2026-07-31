@@ -11,7 +11,7 @@ project('nnedi3', 'cpp',
 avisynth_dep = dependency('avisynth', required : true)
 
 if host_machine.system() == 'windows'
-    error('Please use msbuild to build the solution.')
+    error('Windows builds use nnedi3.sln / MSBuild. See README.md.')
 endif
 
 cpp_args = [ '-std=c++17',
