@@ -100,6 +100,9 @@ extern "C" void dotProd_m32_m16_AVX(const float *data,const float *weights,float
 extern "C" void dotProd_m48_m16_AVX(const float *data,const float *weights,float *vals,const int n,const int len,const float *istd);
 extern "C" void dotProd_m32_m16_i16_AVX(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
 extern "C" void dotProd_m48_m16_i16_AVX(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
+#if defined(_WIN64)
+extern "C" void dotProd_m32_m16_i16_AVXVNNI_ASM(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
+#endif
 extern "C" void e0_m16_AVX(float *s,const int n);
 extern "C" void e1_m16_AVX(float *s,const int n);
 extern "C" void e2_m16_AVX(float *s,const int n);
@@ -3014,7 +3017,13 @@ static PredictorKernels makePredictorKernels8(const KernelSet& backend,
 #endif
 #if !defined(_WIN32) || defined(_WIN64)
 	if (plan.dot == PredictorDot::AVXVNNIInt16)
+	{
+#if defined(_WIN64)
+		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVXVNNI_ASM : dotProd_m48_m16_i16_AVXVNNI;
+#else
 		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVXVNNI : dotProd_m48_m16_i16_AVXVNNI;
+#endif
+	}
 	else if (plan.dot == PredictorDot::AVX512Float)
 		floatDot = (asize%48)!=0 ? dotProd_m32_m16_AVX512 : dotProd_m48_m16_AVX512;
 	else if (plan.dot == PredictorDot::AVX512Int16)

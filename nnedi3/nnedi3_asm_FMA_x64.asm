@@ -4867,6 +4867,146 @@ aloop_4:
 dotProd_m48_m16_i16_AVX2 endp
 
 
+; AVX-VNNI variant of dotProd_m32_m16_i16_AVX2.
+dotProd_m32_m16_i16_AVXVNNI_ASM proc public frame
+
+len equ dword ptr[rbp+48]
+istd equ qword ptr[rbp+56]
+
+	push rbp
+	.pushreg rbp
+	mov rbp,rsp
+	push rbx
+	.pushreg rbx
+	push rsi
+	.pushreg rsi
+	push rdi
+	.pushreg rdi
+	push r12
+	.pushreg r12
+	push r13
+	.pushreg r13
+	push r14
+	.pushreg r14
+	push r15
+	.pushreg r15
+	sub rsp,32
+	.allocstack 32
+	vmovdqu XMMWORD ptr[rsp],xmm6
+	.savexmm128 xmm6,0
+	vmovdqu XMMWORD ptr[rsp+16],xmm7
+	.savexmm128 xmm7,16
+	.endprolog
+
+	mov rdi,rdx
+	mov rax,r8
+	xor rbx,rbx
+	mov ebx,r9d
+	xor rsi,rsi
+	mov esi,len
+	mov r15,rcx
+
+	mov r10,4
+	mov r11,16
+	mov r12,32
+	mov r13,64
+	mov r14,256
+
+nloop_3_vnni:
+	mov rcx,r15
+	vpxor ymm0,ymm0,ymm0
+	vpxor ymm1,ymm1,ymm1
+	vpxor ymm2,ymm2,ymm2
+	vpxor ymm3,ymm3,ymm3
+	mov rdx,rsi
+lloop_3_vnni:
+	vmovdqa ymm4,YMMWORD ptr [rcx]
+	vpdpwssd ymm0,ymm4,YMMWORD ptr [rdi]
+	vpdpwssd ymm1,ymm4,YMMWORD ptr [rdi+r12]
+	vpdpwssd ymm2,ymm4,YMMWORD ptr [rdi+r13]
+	vpdpwssd ymm3,ymm4,YMMWORD ptr [rdi+96]
+
+	vmovdqa ymm4,YMMWORD ptr [rcx+r12]
+	vpdpwssd ymm0,ymm4,YMMWORD ptr [rdi+r13*2]
+	vpdpwssd ymm1,ymm4,YMMWORD ptr [rdi+160]
+	vpdpwssd ymm2,ymm4,YMMWORD ptr [rdi+192]
+	vpdpwssd ymm3,ymm4,YMMWORD ptr [rdi+224]
+	add rcx,r13
+	add rdi,r14
+	sub rdx,r12
+	jnz short lloop_3_vnni
+
+	vextracti128 xmm4,ymm0,1
+	vextracti128 xmm5,ymm1,1
+	vextracti128 xmm6,ymm2,1
+	vextracti128 xmm7,ymm3,1
+	vpaddd xmm0,xmm0,xmm4
+	vpaddd xmm1,xmm1,xmm5
+	vpaddd xmm2,xmm2,xmm6
+	vpaddd xmm3,xmm3,xmm7
+	vpunpckhqdq xmm4,xmm0,xmm1
+	vpunpckhqdq xmm5,xmm2,xmm3
+	vpunpcklqdq xmm0,xmm0,xmm1
+	vpunpcklqdq xmm2,xmm2,xmm3
+	vpaddd xmm0,xmm0,xmm4
+	vpaddd xmm2,xmm2,xmm5
+	vshufps xmm6,xmm0,xmm2,221
+	vshufps xmm0,xmm0,xmm2,136
+	vpaddd xmm6,xmm6,xmm0
+	vmovdqa XMMWORD ptr [rax],xmm6
+	add rax,r11
+	sub rbx,r10
+	jnz nloop_3_vnni
+
+	mov rcx,istd
+	mov rax,r8
+	vmovss xmm7,dword ptr[rcx]
+	xor rdx,rdx
+	mov edx,r9d
+	vpshufd xmm7,xmm7,0
+	xor rcx,rcx
+aloop_3_vnni:
+	vmovdqa ymm0,YMMWORD ptr[rax+rcx*4]
+	vmovdqa ymm2,YMMWORD ptr[rax+rcx*4+32]
+	vcvtdq2ps ymm0,ymm0
+	vcvtdq2ps ymm2,ymm2
+	vextractf128 xmm1,ymm0,1
+	vextractf128 xmm3,ymm2,1
+	vmulps xmm0,xmm0,XMMWORD ptr[rdi+rcx*8]
+	vmulps xmm1,xmm1,XMMWORD ptr[rdi+rcx*8+32]
+	vmulps xmm2,xmm2,XMMWORD ptr[rdi+rcx*8+64]
+	vmulps xmm3,xmm3,XMMWORD ptr[rdi+rcx*8+96]
+	vfmadd213ps xmm0,xmm7,XMMWORD ptr[rdi+rcx*8+16]
+	vfmadd213ps xmm1,xmm7,XMMWORD ptr[rdi+rcx*8+48]
+	vfmadd213ps xmm2,xmm7,XMMWORD ptr[rdi+rcx*8+80]
+	vfmadd213ps xmm3,xmm7,XMMWORD ptr[rdi+rcx*8+112]
+	vmovaps XMMWORD ptr[rax+rcx*4],xmm0
+	vmovaps XMMWORD ptr[rax+rcx*4+16],xmm1
+	vmovaps XMMWORD ptr[rax+rcx*4+32],xmm2
+	vmovaps XMMWORD ptr[rax+rcx*4+48],xmm3
+	add rcx,r11
+	sub rdx,r11
+	jnz short aloop_3_vnni
+
+	vmovdqu xmm7,XMMWORD ptr[rsp+16]
+	vmovdqu xmm6,XMMWORD ptr[rsp]
+	add rsp,32
+	vzeroupper
+	pop r15
+	pop r14
+	pop r13
+	pop r12
+	pop rdi
+	pop rsi
+	pop rbx
+	pop rbp
+	ret
+
+dotProd_m32_m16_i16_AVXVNNI_ASM endp
+
+
+
+
 ;e0_m16_AVX2 proc ptr_s:dword,n:dword
 ; ptr_s = rcx
 ; n = edx
