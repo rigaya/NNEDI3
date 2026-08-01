@@ -88,6 +88,7 @@ protected:
 	bool grey,avsp,isRGBPfamily,isAlphaChannel;
 	uint8_t pixelsize; // AVS16
 	uint8_t bits_per_pixel;
+	uint8_t CurrentPlaneMax;
 
   // CUDA—p
   int weight1pitch;
