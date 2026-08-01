@@ -187,6 +187,7 @@ extern "C" void dotProd_m32_m16_i16_AVX2(const float *dataf,const float *weights
 extern "C" void dotProd_m48_m16_i16_AVX2(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
 #if defined(_WIN64)
 extern "C" void dotProd_m32_m16_i16_AVXVNNI_ASM(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
+extern "C" void dotProd_m32_m16_i16_AVX512VNNI_Large_ASM(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
 #endif
 extern "C" void e0_m16_AVX2(float *s,const int n);
 extern "C" void e1_m16_AVX2(float *s,const int n);
@@ -2854,6 +2855,20 @@ struct PredictorKernels
 	void (*weightedAverage)(const float*,const int,float*);
 };
 
+#if defined(_WIN64)
+static void dotProd_m32_m16_i16_AVX512VNNI_Windows(const float *data,
+	const float *weights, float *vals, const int n, const int len,
+	const float *istd)
+{
+	if (len == 128 && n >= 256)
+		dotProd_m32_m16_i16_AVX512VNNI_Large_ASM(
+			data, weights, vals, n, len, istd);
+	else
+		dotProd_m32_m16_i16_AVX512VNNI(
+			data, weights, vals, n, len, istd);
+}
+#endif
+
 static PredictorKernels makePredictorKernels8(const KernelSet& backend,
 	const PredictorPlan& plan, const bool int16Predictor, const int asize, const int fapprox)
 {
@@ -2921,7 +2936,13 @@ static PredictorKernels makePredictorKernels8(const KernelSet& backend,
 	else if (plan.dot == PredictorDot::AVX512Int16)
 		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512 : dotProd_m48_m16_i16_AVX512;
 	else if (plan.dot == PredictorDot::AVX512VNNIInt16)
-		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512VNNI : dotProd_m48_m16_i16_AVX512VNNI;
+		intDot = (asize%48)!=0
+#if defined(_WIN64)
+			? dotProd_m32_m16_i16_AVX512VNNI_Windows
+#else
+			? dotProd_m32_m16_i16_AVX512VNNI
+#endif
+			: dotProd_m48_m16_i16_AVX512VNNI;
 	if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
 	{
 		intExtract = extract_m8_i16_AVX512;
@@ -3302,7 +3323,13 @@ static PredictorKernels makePredictorKernels16(const KernelSet& backend,
 	else if (plan.dot == PredictorDot::AVX512Int16)
 		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512 : dotProd_m48_m16_i16_AVX512;
 	else if (plan.dot == PredictorDot::AVX512VNNIInt16)
-		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVX512VNNI : dotProd_m48_m16_i16_AVX512VNNI;
+		intDot = (asize%48)!=0
+#if defined(_WIN64)
+			? dotProd_m32_m16_i16_AVX512VNNI_Windows
+#else
+			? dotProd_m32_m16_i16_AVX512VNNI
+#endif
+			: dotProd_m48_m16_i16_AVX512VNNI;
 	if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
 	{
 		intExtract = bits<=10 ? extract_m8_i16_AVX512_16_10

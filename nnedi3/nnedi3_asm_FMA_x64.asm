@@ -5005,6 +5005,89 @@ aloop_3_vnni:
 dotProd_m32_m16_i16_AVXVNNI_ASM endp
 
 
+; AVX512-VNNI len=128, n>=256 predictor kernel.  Keep four independent
+; VPDPWSSD chains interleaved; MSVC otherwise schedules each neuron as one
+; long dependency chain and cannot hide the dot-product latency.
+dotProd_m32_m16_i16_AVX512VNNI_Large_ASM proc public frame
+
+	.endprolog
+
+	; rcx=data, rdx=weights, r8=vals, r9d=n, [rsp+48]=istd
+	vmovdqu64 zmm20,ZMMWORD ptr[rcx]
+	vmovdqu64 zmm21,ZMMWORD ptr[rcx+64]
+	vmovdqu64 zmm22,ZMMWORD ptr[rcx+128]
+	vmovdqu64 zmm23,ZMMWORD ptr[rcx+192]
+	mov r11,QWORD ptr[rsp+48]
+	vbroadcastss xmm28,DWORD ptr[r11]
+	mov eax,r9d
+	shl rax,8
+	lea r10,[rdx+rax]
+
+dotProd_AVX512VNNI_large_loop:
+	vpxord zmm24,zmm24,zmm24
+	vpxord zmm25,zmm25,zmm25
+	vpxord zmm26,zmm26,zmm26
+	vpxord zmm27,zmm27,zmm27
+
+	vpdpwssd zmm24,zmm20,ZMMWORD ptr[rdx]
+	vpdpwssd zmm25,zmm20,ZMMWORD ptr[rdx+64]
+	vpdpwssd zmm26,zmm20,ZMMWORD ptr[rdx+128]
+	vpdpwssd zmm27,zmm20,ZMMWORD ptr[rdx+192]
+	vpdpwssd zmm24,zmm21,ZMMWORD ptr[rdx+256]
+	vpdpwssd zmm25,zmm21,ZMMWORD ptr[rdx+320]
+	vpdpwssd zmm26,zmm21,ZMMWORD ptr[rdx+384]
+	vpdpwssd zmm27,zmm21,ZMMWORD ptr[rdx+448]
+	vpdpwssd zmm24,zmm22,ZMMWORD ptr[rdx+512]
+	vpdpwssd zmm25,zmm22,ZMMWORD ptr[rdx+576]
+	vpdpwssd zmm26,zmm22,ZMMWORD ptr[rdx+640]
+	vpdpwssd zmm27,zmm22,ZMMWORD ptr[rdx+704]
+	vpdpwssd zmm24,zmm23,ZMMWORD ptr[rdx+768]
+	vpdpwssd zmm25,zmm23,ZMMWORD ptr[rdx+832]
+	vpdpwssd zmm26,zmm23,ZMMWORD ptr[rdx+896]
+	vpdpwssd zmm27,zmm23,ZMMWORD ptr[rdx+960]
+
+	vextracti64x4 ymm0,zmm24,1
+	vextracti64x4 ymm1,zmm25,1
+	vextracti64x4 ymm2,zmm26,1
+	vextracti64x4 ymm3,zmm27,1
+	vpaddd ymm0,ymm0,ymm24
+	vpaddd ymm1,ymm1,ymm25
+	vpaddd ymm2,ymm2,ymm26
+	vpaddd ymm3,ymm3,ymm27
+	vextracti128 xmm4,ymm0,1
+	vextracti128 xmm5,ymm1,1
+	vpaddd xmm0,xmm0,xmm4
+	vpaddd xmm1,xmm1,xmm5
+	vextracti128 xmm4,ymm2,1
+	vextracti128 xmm5,ymm3,1
+	vpaddd xmm2,xmm2,xmm4
+	vpaddd xmm3,xmm3,xmm5
+	vpunpckhqdq xmm4,xmm0,xmm1
+	vpunpckhqdq xmm5,xmm2,xmm3
+	vpunpcklqdq xmm0,xmm0,xmm1
+	vpunpcklqdq xmm2,xmm2,xmm3
+	vpaddd xmm0,xmm0,xmm4
+	vpaddd xmm2,xmm2,xmm5
+	vshufps xmm4,xmm0,xmm2,221
+	vshufps xmm0,xmm0,xmm2,136
+	vpaddd xmm0,xmm0,xmm4
+	vcvtdq2ps xmm0,xmm0
+	vmulps xmm0,xmm0,XMMWORD ptr[r10]
+	vfmadd213ps xmm0,xmm28,XMMWORD ptr[r10+16]
+	vmovups XMMWORD ptr[r8],xmm0
+
+	add rdx,1024
+	add r10,32
+	add r8,16
+	sub r9d,4
+	jnz dotProd_AVX512VNNI_large_loop
+
+	vzeroupper
+	ret
+
+dotProd_m32_m16_i16_AVX512VNNI_Large_ASM endp
+
+
 
 
 ;e0_m16_AVX2 proc ptr_s:dword,n:dword

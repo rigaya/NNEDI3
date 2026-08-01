@@ -201,6 +201,39 @@ void dotProdInt16Len128AVX512VNNI(const std::int16_t* data,
         weights + static_cast<std::size_t>(n) * 128);
     const __m128 inverseStdDev = _mm_set1_ps(istd);
 
+    if (n >= 256) {
+        for (int neuron = 0; neuron < n; neuron += 4) {
+            const std::int16_t* const group = weights
+                + static_cast<std::size_t>(neuron) * 128;
+            __m512i sums0 = _mm512_setzero_si512();
+            __m512i sums1 = _mm512_setzero_si512();
+            __m512i sums2 = _mm512_setzero_si512();
+            __m512i sums3 = _mm512_setzero_si512();
+
+#define NNEDI3_DPWSSD4_AVX512(values, offset) \
+            sums0 = _mm512_dpwssd_epi32(sums0, values, _mm512_loadu_si512(group + (offset) * 4)); \
+            sums1 = _mm512_dpwssd_epi32(sums1, values, _mm512_loadu_si512(group + (offset) * 4 + 32)); \
+            sums2 = _mm512_dpwssd_epi32(sums2, values, _mm512_loadu_si512(group + (offset) * 4 + 64)); \
+            sums3 = _mm512_dpwssd_epi32(sums3, values, _mm512_loadu_si512(group + (offset) * 4 + 96))
+
+            NNEDI3_DPWSSD4_AVX512(data0, 0);
+            NNEDI3_DPWSSD4_AVX512(data1, 32);
+            NNEDI3_DPWSSD4_AVX512(data2, 64);
+            NNEDI3_DPWSSD4_AVX512(data3, 96);
+#undef NNEDI3_DPWSSD4_AVX512
+
+            const __m128i integerSums = horizontalSum4x16Int32(
+                sums0, sums1, sums2, sums3);
+            const float* const groupScaleBias = scaleBias
+                + static_cast<std::size_t>(neuron / 4) * 8;
+            const __m128 scaled = _mm_mul_ps(
+                _mm_cvtepi32_ps(integerSums), _mm_loadu_ps(groupScaleBias));
+            _mm_storeu_ps(vals + neuron, _mm_fmadd_ps(
+                scaled, inverseStdDev, _mm_loadu_ps(groupScaleBias + 4)));
+        }
+        return;
+    }
+
     for (int neuron = 0; neuron < n; neuron += 8) {
         const std::int16_t* const group0 = weights
             + static_cast<std::size_t>(neuron) * 128;
@@ -389,8 +422,10 @@ void dotProdInt16AVX512(const float* dataRaw, const float* weightsRaw,
         return;
     }
     if (len == 128) {
-        dotProdInt16Len128AVX512(data, weights, vals, n, *istd);
-        return;
+        if (n < 256) {
+            dotProdInt16Len128AVX512(data, weights, vals, n, *istd);
+            return;
+        }
     }
     const auto* const scaleBias = reinterpret_cast<const float*>(
         weights + static_cast<std::size_t>(n) * len);
