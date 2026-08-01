@@ -2053,20 +2053,15 @@ static PrescreenerKernels8 makePrescreenerKernels8(const KernelSet& backend)
 #endif
 #endif
 #if !defined(_WIN32) || defined(_WIN64)
-	if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX512VNNI)
 	{
 		result.oldInputInt16 = uc2s48_AVX512;
-		result.oldNetworkInt16 = computeNetwork0_i16_AVX512;
+		result.oldNetworkInt16 = computeNetwork0_i16_AVX512VNNI;
 		result.oldInputFloat = uc2f48_AVX512;
 		result.oldNetworkFloat = computeNetwork0_AVX512;
 		result.newInput = uc2s64_AVX512;
-		result.newNetwork = computeNetwork0new_AVX512;
+		result.newNetwork = computeNetwork0new_AVX512VNNI;
 		result.processLine = processLine0_AVX512;
-		if (backend.requested_backend == nnedi3_backend::Backend::AVX512VNNI)
-		{
-			result.oldNetworkInt16 = computeNetwork0_i16_AVX512VNNI;
-			result.newNetwork = computeNetwork0new_AVX512VNNI;
-		}
 	}
 #endif
 	return result;
