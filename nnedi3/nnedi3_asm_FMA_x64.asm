@@ -5005,6 +5005,116 @@ aloop_3_vnni:
 dotProd_m32_m16_i16_AVXVNNI_ASM endp
 
 
+; AVX512-VNNI len=32 predictor kernel.  The generic intrinsic path retains
+; loop and tail handling even though this shape always consumes one ZMM.
+dotProd_m32_m16_i16_AVX512VNNI_Len32_ASM proc public frame
+
+	sub rsp,40
+	.allocstack 40
+	vmovdqu XMMWORD ptr[rsp],xmm6
+	.savexmm128 xmm6,0
+	vmovdqu XMMWORD ptr[rsp+16],xmm7
+	.savexmm128 xmm7,16
+	.endprolog
+
+	; rcx=data, rdx=weights, r8=vals, r9d=n, [rsp+88]=istd
+	vmovdqu64 zmm17,ZMMWORD ptr[rcx]
+	mov r11,QWORD ptr[rsp+88]
+	vbroadcastss xmm19,DWORD ptr[r11]
+	mov eax,r9d
+	shl rax,6
+	lea r10,[rdx+rax]
+	add rdx,384
+
+dotProd_AVX512VNNI_len32_loop:
+	; The first dot-product block has no prior accumulator.  VPMADDWD is
+	; exactly equivalent to zero + VPDPWSSD and avoids eight zeroing uops.
+	vpmaddwd zmm1,zmm17,ZMMWORD ptr[rdx-384]
+	vpmaddwd zmm3,zmm17,ZMMWORD ptr[rdx-256]
+	vpmaddwd zmm2,zmm17,ZMMWORD ptr[rdx-320]
+	vpmaddwd zmm16,zmm17,ZMMWORD ptr[rdx-192]
+
+	; Start reducing neurons 0..3, then fill registers as soon as they
+	; become free with neurons 4..7.  This mirrors MSVC's fast AVX512
+	; schedule while keeping the instruction order stable.
+	vextracti64x4 ymm0,zmm1,1
+	vpaddd ymm4,ymm0,ymm1
+	vextracti64x4 ymm0,zmm2,1
+	vpaddd ymm2,ymm0,ymm2
+	vpunpckhqdq ymm1,ymm4,ymm2
+	vextracti64x4 ymm0,zmm3,1
+	vpaddd ymm5,ymm0,ymm3
+	vextracti64x4 ymm0,zmm16,1
+	vpaddd ymm3,ymm0,ymm16
+
+	vpmaddwd zmm16,zmm17,ZMMWORD ptr[rdx+64]
+	vpunpcklqdq ymm0,ymm4,ymm2
+	vpaddd ymm4,ymm0,ymm1
+	vpunpcklqdq ymm0,ymm5,ymm3
+	vpunpckhqdq ymm2,ymm5,ymm3
+	vpmaddwd zmm3,zmm17,ZMMWORD ptr[rdx]
+	vpaddd ymm1,ymm0,ymm2
+	vpmaddwd zmm2,zmm17,ZMMWORD ptr[rdx-64]
+	vextracti128 xmm6,ymm1,1
+	vpaddd xmm6,xmm6,xmm1
+	vpmaddwd zmm1,zmm17,ZMMWORD ptr[rdx-128]
+	vextracti64x4 ymm0,zmm1,1
+	vextracti128 xmm7,ymm4,1
+	vpaddd xmm7,xmm7,xmm4
+
+	vpaddd ymm4,ymm0,ymm1
+	vextracti64x4 ymm0,zmm2,1
+	vpaddd ymm2,ymm0,ymm2
+	vpunpckhqdq ymm1,ymm4,ymm2
+	vextracti64x4 ymm0,zmm3,1
+	vpaddd ymm5,ymm0,ymm3
+	vextracti64x4 ymm0,zmm16,1
+	vpaddd ymm3,ymm0,ymm16
+	vpunpcklqdq ymm0,ymm4,ymm2
+	vpaddd ymm4,ymm0,ymm1
+	vpunpcklqdq ymm0,ymm5,ymm3
+	vpunpckhqdq ymm2,ymm5,ymm3
+	vpaddd ymm1,ymm0,ymm2
+	vextracti128 xmm2,ymm1,1
+	vpaddd xmm2,xmm2,xmm1
+	vextracti128 xmm3,ymm4,1
+	vpaddd xmm3,xmm3,xmm4
+
+	; Finish neurons 4..7 first, then 0..3, to keep both reduction chains
+	; live through conversion and scaling.
+	vmovups xmm0,xmm3
+	vshufps xmm0,xmm0,xmm2,221
+	vshufps xmm3,xmm3,xmm2,136
+	vpaddd xmm0,xmm0,xmm3
+	vcvtdq2ps xmm2,xmm0
+	vmulps xmm2,xmm2,XMMWORD ptr[r10+32]
+
+	vmovups xmm0,xmm7
+	vshufps xmm0,xmm0,xmm6,221
+	vshufps xmm7,xmm7,xmm6,136
+	vpaddd xmm0,xmm0,xmm7
+	vcvtdq2ps xmm1,xmm0
+	vmulps xmm1,xmm1,XMMWORD ptr[r10]
+	vfmadd213ps xmm1,xmm19,XMMWORD ptr[r10+16]
+	vmovups XMMWORD ptr[r8],xmm1
+	vfmadd213ps xmm2,xmm19,XMMWORD ptr[r10+48]
+	vmovups XMMWORD ptr[r8+16],xmm2
+
+	add rdx,512
+	add r10,64
+	add r8,32
+	sub r9d,8
+	jnz dotProd_AVX512VNNI_len32_loop
+
+	vmovdqu xmm7,XMMWORD ptr[rsp+16]
+	vmovdqu xmm6,XMMWORD ptr[rsp]
+	vzeroupper
+	add rsp,40
+	ret
+
+dotProd_m32_m16_i16_AVX512VNNI_Len32_ASM endp
+
+
 ; AVX512-VNNI len=128, n>=256 predictor kernel.  Keep four independent
 ; VPDPWSSD chains interleaved; MSVC otherwise schedules each neuron as one
 ; long dependency chain and cannot hide the dot-product latency.

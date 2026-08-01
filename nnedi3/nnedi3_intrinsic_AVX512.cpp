@@ -291,6 +291,12 @@ void dotProdInt16AVX512VNNI(const float* dataRaw, const float* weightsRaw,
         dotProdInt16Len48AVX512(data, weights, vals, n, *istd);
         return;
     }
+    // 32要素では蓄積すべき2ブロック目がなく、zero + VPDPWSSDは
+    // VPMADDWD 1命令と等価になる。初回積和を直接seedしてゼロ化を省く。
+    if (len == 32) {
+        dotProdInt16Len32AVX512(data, weights, vals, n, *istd);
+        return;
+    }
     if (len == 128) {
         dotProdInt16Len128AVX512VNNI(data, weights, vals, n, *istd);
         return;
