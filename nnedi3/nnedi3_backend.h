@@ -225,7 +225,7 @@ constexpr KernelSet make_kernel_set(const Backend backend) {
         || kernel_backend == Backend::AVX2FMA3VNNI;
     const WeightLayout layout = has_avx2 ? WeightLayout::AVX2
         : has_sse2 ? WeightLayout::LegacySIMD : WeightLayout::NeuronMajor;
-    const WeightLayout prescreenerLayout = is_avx512
+    const WeightLayout prescreenerLayout = backend == Backend::AVX512VNNI
         ? WeightLayout::AVX512Prescreener : layout;
     return {backend, kernel_backend, prescreenerLayout, layout, has_sse2, has_sse41,
         has_avx, has_avx2, has_fma3};
