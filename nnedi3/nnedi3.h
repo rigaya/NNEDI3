@@ -83,6 +83,7 @@ protected:
 	bool grey,avsp,isRGBPfamily,isAlphaChannel,has_at_least_v8;
 	uint8_t pixelsize; // AVS16
 	uint8_t bits_per_pixel;
+	uint8_t CurrentPlaneMax;
 
 	void calcStartEnd2(void);
 	void copyPad(PVideoFrame &src,int fn,IScriptEnvironment *env);
