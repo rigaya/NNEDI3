@@ -301,6 +301,49 @@ void dotProdInt16AVX512VNNI(const float* dataRaw, const float* weightsRaw,
         dotProdInt16Len128AVX512VNNI(data, weights, vals, n, *istd);
         return;
     }
+    // Four interleaved neurons avoid the register moves emitted for the
+    // generic eight-neuron loop on large predictors.
+    if (n >= 256 && (len == 96 || len == 192 || len == 288)) {
+        const __m512i data0 = _mm512_loadu_si512(data);
+        const auto* const scaleBias = reinterpret_cast<const float*>(
+            weights + static_cast<std::size_t>(n) * len);
+        const __m128 inverseStdDev = _mm_set1_ps(*istd);
+        for (int neuron = 0; neuron < n; neuron += 4) {
+            const std::int16_t* const group = weights
+                + static_cast<std::size_t>(neuron) * len;
+            __m512i sums0 = _mm512_madd_epi16(
+                data0, _mm512_loadu_si512(group));
+            __m512i sums1 = _mm512_madd_epi16(
+                data0, _mm512_loadu_si512(group + 32));
+            __m512i sums2 = _mm512_madd_epi16(
+                data0, _mm512_loadu_si512(group + 64));
+            __m512i sums3 = _mm512_madd_epi16(
+                data0, _mm512_loadu_si512(group + 96));
+            for (int input = 32; input < len; input += 32) {
+                const __m512i values = _mm512_loadu_si512(data + input);
+                const std::int16_t* const tile = group
+                    + static_cast<std::size_t>(input) * 4;
+                sums0 = _mm512_dpwssd_epi32(
+                    sums0, values, _mm512_loadu_si512(tile));
+                sums1 = _mm512_dpwssd_epi32(
+                    sums1, values, _mm512_loadu_si512(tile + 32));
+                sums2 = _mm512_dpwssd_epi32(
+                    sums2, values, _mm512_loadu_si512(tile + 64));
+                sums3 = _mm512_dpwssd_epi32(
+                    sums3, values, _mm512_loadu_si512(tile + 96));
+            }
+            const __m128i integerSums = horizontalSum4x16Int32(
+                sums0, sums1, sums2, sums3);
+            const float* const groupScaleBias = scaleBias
+                + static_cast<std::size_t>(neuron / 4) * 8;
+            const __m128 scaled = _mm_mul_ps(
+                _mm_cvtepi32_ps(integerSums),
+                _mm_loadu_ps(groupScaleBias));
+            _mm_storeu_ps(vals + neuron, _mm_fmadd_ps(
+                scaled, inverseStdDev, _mm_loadu_ps(groupScaleBias + 4)));
+        }
+        return;
+    }
     const auto* const scaleBias = reinterpret_cast<const float*>(
         weights + static_cast<std::size_t>(n) * len);
     const __m128 inverseStdDev = _mm_set1_ps(*istd);
