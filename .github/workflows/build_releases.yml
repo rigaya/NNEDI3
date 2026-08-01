@@ -1,0 +1,87 @@
+name: Build Windows Releases
+
+on:
+  push:
+    branches:
+      - avsp
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+
+jobs:
+  get_version_name:
+    name: Get version name
+    runs-on: ubuntu-latest
+    outputs:
+      rev_count: ${{ steps.rev.outputs.rev_count }}
+      version_name: ${{ steps.rev.outputs.version_name }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Set version name
+      id: rev
+      run: |
+        cd ${{ github.workspace }}
+        REVCOUNT=`git rev-list --count HEAD`
+        echo "rev_count=${REVCOUNT}" >> $GITHUB_OUTPUT
+        if [[ "${{ github.ref }}" =~ "refs/tags/" ]]; then
+          VERSION=$(echo ${{ github.ref }} | sed -e "s#refs/tags/##g")
+        else
+          VERSION=r${REVCOUNT}
+        fi
+        echo "version_name=${VERSION}" >> $GITHUB_OUTPUT
+
+  build:
+    name: Upload Release Asset
+    runs-on: windows-2022
+    needs: get_version_name
+
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v2
+        with:
+          msbuild-architecture: x64
+
+      - name: MSBuild
+        run: |
+          msbuild nnedi3.sln /t:build /p:Configuration=Release /p:Platform=x64 -maxcpucount
+
+      - name: Create Archive
+        id: archieve
+        run: |
+          mkdir nnedi3_Release
+          copy x64\Release\nnedi3.dll nnedi3_Release\
+          7z a -tzip -mx9 nnedi3_${{ needs.get_version_name.outputs.version_name }}_x64.zip .\nnedi3_Release\*
+
+      - name: Calc hash
+        id: calc_hash
+        run: |
+          7z h -scrc* nnedi3_${{ needs.get_version_name.outputs.version_name }}_x64.zip
+
+      - name: Upload Release Asset
+        id: upload-release-asset
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: nnedi3_${{ needs.get_version_name.outputs.version_name }}_x64.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nnedi3_release_${{ needs.get_version_name.outputs.version_name }}_x64
+          path: nnedi3_${{ needs.get_version_name.outputs.version_name }}_x64.zip
