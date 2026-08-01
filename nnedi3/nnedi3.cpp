@@ -188,6 +188,7 @@ extern "C" void dotProd_m48_m16_i16_AVX2(const float *dataf,const float *weights
 #if defined(_WIN64)
 extern "C" void dotProd_m32_m16_i16_AVXVNNI_ASM(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
 extern "C" void dotProd_m32_m16_i16_AVX512VNNI_Len32_ASM(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
+extern "C" void dotProd_m32_m16_i16_AVX512VNNI_LargeGeneric_ASM(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
 extern "C" void dotProd_m32_m16_i16_AVX512VNNI_Large_ASM(const float *dataf,const float *weightsf,float *vals,const int n,const int len,const float *istd);
 #endif
 extern "C" void e0_m16_AVX2(float *s,const int n);
@@ -2863,6 +2864,9 @@ static void dotProd_m32_m16_i16_AVX512VNNI_Windows(const float *data,
 {
 	if (len == 32)
 		dotProd_m32_m16_i16_AVX512VNNI_Len32_ASM(
+			data, weights, vals, n, len, istd);
+	else if (len == 96 && n >= 256)
+		dotProd_m32_m16_i16_AVX512VNNI_LargeGeneric_ASM(
 			data, weights, vals, n, len, istd);
 	else if (len == 128 && n >= 256)
 		dotProd_m32_m16_i16_AVX512VNNI_Large_ASM(

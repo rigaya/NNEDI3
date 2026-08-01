@@ -5115,6 +5115,92 @@ dotProd_AVX512VNNI_len32_loop:
 dotProd_m32_m16_i16_AVX512VNNI_Len32_ASM endp
 
 
+
+
+; AVX512-VNNI large predictor kernel for len=96, n>=256.
+; Walk one contiguous four-neuron weight stream and seed the first block
+; with VPMADDWD before accumulating subsequent blocks with VPDPWSSD.
+dotProd_m32_m16_i16_AVX512VNNI_LargeGeneric_ASM proc public frame
+
+	.endprolog
+
+	; rcx=data, rdx=weights, r8=vals, r9d=n, [rsp+40]=len, [rsp+48]=istd
+	mov eax,r9d
+	mov r11d,DWORD ptr[rsp+40]
+	imul rax,r11
+	shl rax,1
+	lea r10,[rdx+rax]
+	mov rax,QWORD ptr[rsp+48]
+	vbroadcastss xmm19,DWORD ptr[rax]
+
+dotProd_AVX512VNNI_large_generic_group:
+	mov r11,rdx
+	mov edx,DWORD ptr[rsp+40]
+	lea rdx,[rcx+rdx*2]
+	mov rax,rcx
+	vmovdqu64 zmm20,ZMMWORD ptr[rax]
+	vpmaddwd zmm24,zmm20,ZMMWORD ptr[r11]
+	vpmaddwd zmm25,zmm20,ZMMWORD ptr[r11+64]
+	vpmaddwd zmm26,zmm20,ZMMWORD ptr[r11+128]
+	vpmaddwd zmm27,zmm20,ZMMWORD ptr[r11+192]
+	add rax,64
+	add r11,256
+
+dotProd_AVX512VNNI_large_generic_inner:
+	cmp rax,rdx
+	je dotProd_AVX512VNNI_large_generic_reduce
+	vmovdqu64 zmm20,ZMMWORD ptr[rax]
+	vpdpwssd zmm24,zmm20,ZMMWORD ptr[r11]
+	vpdpwssd zmm25,zmm20,ZMMWORD ptr[r11+64]
+	vpdpwssd zmm26,zmm20,ZMMWORD ptr[r11+128]
+	vpdpwssd zmm27,zmm20,ZMMWORD ptr[r11+192]
+	add rax,64
+	add r11,256
+	jmp dotProd_AVX512VNNI_large_generic_inner
+
+dotProd_AVX512VNNI_large_generic_reduce:
+	mov rdx,r11
+	vextracti64x4 ymm0,zmm24,1
+	vextracti64x4 ymm1,zmm25,1
+	vextracti64x4 ymm2,zmm26,1
+	vextracti64x4 ymm3,zmm27,1
+	vpaddd ymm0,ymm0,ymm24
+	vpaddd ymm1,ymm1,ymm25
+	vpaddd ymm2,ymm2,ymm26
+	vpaddd ymm3,ymm3,ymm27
+	vextracti128 xmm4,ymm0,1
+	vextracti128 xmm5,ymm1,1
+	vpaddd xmm0,xmm0,xmm4
+	vpaddd xmm1,xmm1,xmm5
+	vextracti128 xmm4,ymm2,1
+	vextracti128 xmm5,ymm3,1
+	vpaddd xmm2,xmm2,xmm4
+	vpaddd xmm3,xmm3,xmm5
+	vpunpckhqdq xmm4,xmm0,xmm1
+	vpunpckhqdq xmm5,xmm2,xmm3
+	vpunpcklqdq xmm0,xmm0,xmm1
+	vpunpcklqdq xmm2,xmm2,xmm3
+	vpaddd xmm0,xmm0,xmm4
+	vpaddd xmm2,xmm2,xmm5
+	vshufps xmm4,xmm0,xmm2,221
+	vshufps xmm0,xmm0,xmm2,136
+	vpaddd xmm0,xmm0,xmm4
+	vcvtdq2ps xmm0,xmm0
+	vmulps xmm0,xmm0,XMMWORD ptr[r10]
+	vfmadd213ps xmm0,xmm19,XMMWORD ptr[r10+16]
+	vmovups XMMWORD ptr[r8],xmm0
+
+	add r10,32
+	add r8,16
+	sub r9d,4
+	jnz dotProd_AVX512VNNI_large_generic_group
+
+	vzeroupper
+	ret
+
+dotProd_m32_m16_i16_AVX512VNNI_LargeGeneric_ASM endp
+
+
 ; AVX512-VNNI len=128, n>=256 predictor kernel.  Keep four independent
 ; VPDPWSSD chains interleaved; MSVC otherwise schedules each neuron as one
 ; long dependency chain and cannot hide the dot-product latency.
