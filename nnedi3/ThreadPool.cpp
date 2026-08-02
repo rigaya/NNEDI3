@@ -289,8 +289,8 @@ ThreadPool::ThreadPool(void): MT_Thread(),
   CurrentThreadsUsed(0)
 {
 	for (int i = 0; i < MAX_MT_THREADS; i++) {
-		nextJob.push_back(unique_event(nullptr, nullptr));
-		jobFinished.push_back(unique_event(nullptr, nullptr));
+		nextJob.push_back(unique_event(nullptr, CloseEvent));
+		jobFinished.push_back(unique_event(nullptr, CloseEvent));
 	}
 	for (int16_t i = 0; i < MAX_MT_THREADS; i++)
 	{
