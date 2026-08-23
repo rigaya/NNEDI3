@@ -36,7 +36,7 @@
 
 #if defined(_WIN32) || defined(_WIN64)
 #include <intrin.h>
-#else
+#elif NNEDI3_X86
 #include <cpuid.h>
 #endif
 
@@ -44,17 +44,21 @@
 #define ENABLE_SSE2 1
 #define ENABLE_AVX 1
 #define ENABLE_AVX2 1
-#else
+#elif NNEDI3_X86
 #define ENABLE_SSE2 0
 #define ENABLE_AVX 0
 #define ENABLE_AVX2 1
+#else
+#define ENABLE_SSE2 0
+#define ENABLE_AVX 0
+#define ENABLE_AVX2 0
 #endif
 
 #define SSE2_ASM_AVAILABLE ENABLE_SSE2
 #define AVX_ASM_AVAILABLE ENABLE_AVX
 #define AVX2_ASM_AVAILABLE ENABLE_AVX2
 
-#if !(defined(_WIN32) || defined(_WIN64))
+#if NNEDI3_X86 && !(defined(_WIN32) || defined(_WIN64))
 #define computeNetwork0_AVX2 computeNetwork0_FMA3
 #define dotProd_m32_m16_AVX2 dotProd_m32_m16_FMA3
 #define dotProd_m48_m16_AVX2 dotProd_m48_m16_FMA3
@@ -314,7 +318,9 @@ static std::string missingFeatureNames(const int missing)
 
 static int detectVnniCpuFlags()
 {
-#if defined(_WIN32) && !defined(_WIN64)
+#if !NNEDI3_X86
+	return 0;
+#elif defined(_WIN32) && !defined(_WIN64)
 	return 0;
 #elif defined(_WIN32) || defined(_WIN64)
 	int leaf0[4]{};
@@ -1955,7 +1961,7 @@ static PrescreenerKernels8 makePrescreenerKernels8(const KernelSet& backend)
 		result.processLine = processLine0_AVX2;
 	}
 	if (backend.has_fma3) result.oldNetworkFloat = computeNetwork0_FMA3;
-#if !defined(_WIN32) || defined(_WIN64)
+#if NNEDI3_X86 && (!defined(_WIN32) || defined(_WIN64))
 	if (backend.requested_backend == nnedi3_backend::Backend::AVX2FMA3VNNI)
 	{
 		result.oldNetworkInt16 = computeNetwork0_i16_AVXVNNI;
@@ -1963,7 +1969,7 @@ static PrescreenerKernels8 makePrescreenerKernels8(const KernelSet& backend)
 	}
 #endif
 #endif
-#if !defined(_WIN32) || defined(_WIN64)
+#if NNEDI3_X86 && (!defined(_WIN32) || defined(_WIN64))
 	if (backend.requested_backend == nnedi3_backend::Backend::AVX512VNNI)
 	{
 		result.oldInputInt16 = uc2s48_AVX512;
@@ -2348,7 +2354,7 @@ static PrescreenerKernels16 makePrescreenerKernels16(const KernelSet& backend, c
 		result.processLine = processLine0_AVX2_16;
 	}
 	if (backend.has_fma3) result.oldNetworkFloat = computeNetwork0_FMA3;
-#if !defined(_WIN32) || defined(_WIN64)
+#if NNEDI3_X86 && (!defined(_WIN32) || defined(_WIN64))
 	if (backend.requested_backend == nnedi3_backend::Backend::AVX2FMA3VNNI)
 	{
 		result.oldNetworkInt16 = computeNetwork0_i16_AVXVNNI;
@@ -2356,7 +2362,7 @@ static PrescreenerKernels16 makePrescreenerKernels16(const KernelSet& backend, c
 	}
 #endif
 #endif
-#if !defined(_WIN32) || defined(_WIN64)
+#if NNEDI3_X86 && (!defined(_WIN32) || defined(_WIN64))
 	if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
 	{
 		result.oldInputFloat = uc2f48_AVX512_16;
@@ -2627,7 +2633,7 @@ static PrescreenerKernels32 makePrescreenerKernels32(const KernelSet& backend)
 	if (backend.has_avx2) result.processLine = processLine0_AVX2_32;
 	if (backend.has_fma3) result.network = computeNetwork0_FMA3;
 #endif
-#if !defined(_WIN32) || defined(_WIN64)
+#if NNEDI3_X86 && (!defined(_WIN32) || defined(_WIN64))
 	if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
 	{
 		result.input = uc2f48_AVX512_32;
@@ -2930,7 +2936,7 @@ static PredictorKernels makePredictorKernels8(const KernelSet& backend,
 		weightedAverage = weightedAvgElliottMul5_m16_FMA3;
 	}
 #endif
-#if !defined(_WIN32) || defined(_WIN64)
+#if NNEDI3_X86 && (!defined(_WIN32) || defined(_WIN64))
 	if (plan.dot == PredictorDot::AVXVNNIInt16)
 	{
 #if defined(_WIN64)
@@ -3051,7 +3057,7 @@ void evalFunc_2(void *ps)
 #if AVX2_ASM_AVAILABLE
 		if (backend.has_fma3) castScale = castScale_FMA3;
 #endif
-#if !defined(_WIN32) || defined(_WIN64)
+#if NNEDI3_X86 && (!defined(_WIN32) || defined(_WIN64))
 		if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
 			castScale = castScale_AVX512;
 #endif
@@ -3323,7 +3329,7 @@ static PredictorKernels makePredictorKernels16(const KernelSet& backend,
 		weightedAverage = weightedAvgElliottMul5_m16_FMA3;
 	}
 #endif
-#if !defined(_WIN32) || defined(_WIN64)
+#if NNEDI3_X86 && (!defined(_WIN32) || defined(_WIN64))
 	if (plan.dot == PredictorDot::AVXVNNIInt16)
 		intDot = (asize%48)!=0 ? dotProd_m32_m16_i16_AVXVNNI : dotProd_m48_m16_i16_AVXVNNI;
 	else if (plan.dot == PredictorDot::AVX512Float)
@@ -3440,7 +3446,7 @@ void evalFunc_2_16(void *ps)
 #if AVX2_ASM_AVAILABLE
 		if (backend.has_fma3) castScale = castScale_FMA3_16;
 #endif
-#if !defined(_WIN32) || defined(_WIN64)
+#if NNEDI3_X86 && (!defined(_WIN32) || defined(_WIN64))
 		if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
 			castScale = castScale_AVX512_16;
 #endif
@@ -3608,7 +3614,7 @@ static PredictorKernels makePredictorKernels32(const KernelSet& backend,
 		weightedAverage = weightedAvgElliottMul5_m16_FMA3;
 	}
 #endif
-#if !defined(_WIN32) || defined(_WIN64)
+#if NNEDI3_X86 && (!defined(_WIN32) || defined(_WIN64))
 	if (plan.dot == PredictorDot::AVX512Float)
 		dotProd = (asize%48)!=0 ? dotProd_m32_m16_AVX512 : dotProd_m48_m16_AVX512;
 	if (nnedi3_backend::is_avx512_backend(backend.requested_backend))

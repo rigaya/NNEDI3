@@ -183,6 +183,24 @@ static void Get_CPU_Info(Arch_CPU& cpu)
     }
     fclose(fp);
 
+    // ARMなどphysical id/core idを公開しない環境では、オンラインCPUを独立コアとして扱う
+    if (cpu.NbLogicCPU == 0) {
+        unsigned int cpuCount = std::thread::hardware_concurrency();
+        if (cpuCount == 0) cpuCount = 1;
+        const unsigned int maskBits = sizeof(uintptr_t) * 8;
+        if (cpuCount > maskBits) cpuCount = maskBits;
+        if (cpuCount > MAX_PHYSICAL_CORES) cpuCount = MAX_PHYSICAL_CORES;
+
+        cpu.NbLogicCPU = (uint8_t)cpuCount;
+        cpu.NbPhysCore = (uint8_t)cpuCount;
+        for (unsigned int i = 0; i < cpuCount; ++i) {
+            cpu.NbHT[i] = 1;
+            cpu.ProcMask[i] = (uintptr_t)1 << i;
+            cpu.FullMask |= cpu.ProcMask[i];
+        }
+        return;
+    }
+
     // 物理コア数を計算（ユニークな物理ID+コアIDの組み合わせ）
     std::vector<std::pair<int, int>> uniqueCores;
     for (size_t i = 0; i < coreInfo.size() && i < MAX_PHYSICAL_CORES; i++) {
@@ -838,4 +856,3 @@ bool ThreadPool::WaitThreadsEnd(void)
 
 	return(true);
 }
-

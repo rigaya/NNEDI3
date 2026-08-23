@@ -29,6 +29,13 @@ cpp_args = [ '-std=c++17',
 ]
 link_args = []
 
+is_x86 = host_machine.cpu_family() in ['x86', 'x86_64']
+if is_x86
+  cpp_args += ['-DNNEDI3_X86=1']
+else
+  cpp_args += ['-DNNEDI3_X86=0']
+endif
+
 # SIMD 拡張命令セット用のコンパイルフラグ
 sse2_args = cpp_args + ['-msse2']
 ssse3_args = cpp_args + ['-mssse3']

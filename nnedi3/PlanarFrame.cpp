@@ -22,13 +22,13 @@
 */
 
 #include "PlanarFrame.h"
-#if !defined(_WIN32) || defined(_WIN64)
+#if NNEDI3_X86
 #include "nnedi3_intrinsic_AVX512_pixel_convert.h"
 #endif
 #include <stdint.h>
 #if defined(_WIN32) || defined(_WIN64)
 #include <intrin.h>
-#else
+#elif NNEDI3_X86
 #include <x86intrin.h>
 #endif
 
@@ -52,7 +52,7 @@ extern "C" void conv422toYUY2_AVX(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *d
 
 #define IS_BIT_SET(bitfield, bit) ((bitfield) & (1<<(bit)) ? true : false)
 
-#if !defined(_WIN32) && !defined(_WIN64)
+#if !defined(_WIN32) && !defined(_WIN64) && NNEDI3_X86
 // Linux用のcpuid実装
 static void __cpuid(int cpuinfo[4], int leaf) {
   __asm__ __volatile__ (
@@ -78,6 +78,9 @@ static unsigned long long __xgetbv__(unsigned int index) {
 
 static int CPUCheckForExtensions()
 {
+#if !NNEDI3_X86
+  return 0;
+#else
   int result = 0;
   int cpuinfo[4];
 
@@ -172,6 +175,7 @@ static int CPUCheckForExtensions()
   }
 
   return result;
+#endif
 }
 
 
@@ -764,7 +768,7 @@ PlanarFrame& PlanarFrame::operator=(PlanarFrame &ob2)
 void PlanarFrame::convYUY2to422(const uint8_t *src,uint8_t *py,uint8_t *pu,uint8_t *pv,int pitch1,int pitch2Y,int pitch2UV,
 	int width,int height)
 {
-#if !defined(_WIN32) || defined(_WIN64)
+#if NNEDI3_X86
 	if (useAVX512)
 	{
 		convYUY2to422_AVX512(src,py,pu,pv,pitch1,pitch2Y,pitch2UV,width,height);
@@ -832,7 +836,7 @@ void PlanarFrame::convYUY2to422(const uint8_t *src,uint8_t *py,uint8_t *pu,uint8
 void PlanarFrame::conv422toYUY2(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *dst,int pitch1Y,int pitch1UV,int pitch2,
 	int width,int height)
 {
-#if !defined(_WIN32) || defined(_WIN64)
+#if NNEDI3_X86
 	if (useAVX512)
 	{
 		conv422toYUY2_AVX512(py,pu,pv,dst,pitch1Y,pitch1UV,pitch2,width,height);
@@ -901,7 +905,7 @@ void PlanarFrame::conv422toYUY2(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *dst
 void PlanarFrame::convRGB24to444(const uint8_t *src,uint8_t *py,uint8_t *pu,uint8_t *pv,int pitch1,int pitch2Y,int pitch2UV,
 	int width,int height)
 {
-#if !defined(_WIN32) || defined(_WIN64)
+#if NNEDI3_X86
 	if (useAVX512)
 	{
 		convRGB24to444_AVX512(src,py,pu,pv,pitch1,pitch2Y,pitch2UV,width,height);
@@ -930,7 +934,7 @@ void PlanarFrame::convRGB24to444(const uint8_t *src,uint8_t *py,uint8_t *pu,uint
 void PlanarFrame::conv444toRGB24(uint8_t *py,uint8_t *pu,uint8_t *pv,uint8_t *dst,int pitch1Y,int pitch1UV,int pitch2,
 	int width,int height)
 {
-#if !defined(_WIN32) || defined(_WIN64)
+#if NNEDI3_X86
 	if (useAVX512)
 	{
 		conv444toRGB24_AVX512(py,pu,pv,dst,pitch1Y,pitch1UV,pitch2,width,height);
