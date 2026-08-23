@@ -52,12 +52,21 @@ binary1_symbol_args = []
 
 # バイナリデータファイルのobjcopy処理
 if not (host_machine.system() == 'windows')
+  if host_machine.cpu_family() == 'x86_64'
+    binary_object_format = 'elf64-x86-64'
+    binary_object_arch = 'i386:x86-64'
+  elif host_machine.cpu_family() == 'aarch64'
+    binary_object_format = 'elf64-littleaarch64'
+    binary_object_arch = 'aarch64'
+  else
+    error('binary1.binの埋め込みは未対応のCPUアーキテクチャです: ' + host_machine.cpu_family())
+  endif
   objcopy = find_program('objcopy', required: true)
   embed_binary = find_program('embed_binary.sh', required: true)
   binary1_obj = custom_target('binary1_obj',
     input: 'binary1.bin',
     output: 'binary1.o',
-    command: [embed_binary, objcopy, '@INPUT@', '@OUTPUT@', '@PRIVATE_DIR@'],
+    command: [embed_binary, objcopy, '@INPUT@', '@OUTPUT@', '@PRIVATE_DIR@', binary_object_format, binary_object_arch],
     build_by_default: true
   )
   binary1_dep = declare_dependency(
@@ -78,19 +87,20 @@ if host_machine.system() == 'linux'
   nnedi3_avx2_args = cpp_args + ['-mavx2', '-mfma']
 endif
 
-nnedi3_avx2_lib = static_library('nnedi3_avx2',
-  nnedi3_avx2_sources,
-  include_directories : include_directories('../..', '../../KUtil',  '../../common'),
-  cpp_args : nnedi3_avx2_args,
-  name_prefix : '',
-)
-
-nnedi3_avx2_dep = declare_dependency(
-  link_with: nnedi3_avx2_lib,
-)
+if is_x86
+  nnedi3_avx2_lib = static_library('nnedi3_avx2',
+    nnedi3_avx2_sources,
+    include_directories : include_directories('../..', '../../KUtil',  '../../common'),
+    cpp_args : nnedi3_avx2_args,
+    name_prefix : '',
+  )
+  nnedi3_avx2_dep = declare_dependency(link_with: nnedi3_avx2_lib)
+else
+  nnedi3_avx2_dep = declare_dependency()
+endif
 
 # Linuxではdispatchの必須条件と翻訳単位へ許可する命令セットを一致させる。
-if host_machine.system() == 'linux'
+if host_machine.system() == 'linux' and is_x86
   nnedi3_avx512_lib = static_library('nnedi3_avx512',
     nnedi3_avx512_sources,
     include_directories : include_directories('../..', '../../KUtil', '../../common'),
@@ -102,20 +112,27 @@ else
   nnedi3_avx512_dep = declare_dependency()
 endif
 
+nnedi3_link_args = link_args
+if host_machine.system() == 'linux'
+  nnedi3_link_args += [
+    '-Wl,--no-undefined,-z,noexecstack',
+    # AviSynth本体にも同名のThreadPoolがあるため、プラグイン内部参照を自身へ束縛する
+    '-Wl,-Bsymbolic-functions',
+    '-Wl,--version-script=' + join_paths(meson.current_source_dir(), 'nnedi3_linux.map'),
+  ]
+  if is_x86
+    # CUDA linkerではlink_wholeを使用できないため、markerの未定義参照で専用objectを抽出する
+    nnedi3_link_args += ['-Wl,--undefined=nnedi3_avx512_build_marker']
+  endif
+endif
+
 shared_module('KNNEDI3',
   nnedi3_sources,
   include_directories : include_directories('../..', '../../KUtil',  '../../common'),
   dependencies : [avisynth_dep, common_dep, cuda_dep, threads_dep, nnedi3_avx2_dep, nnedi3_avx512_dep] + (not (host_machine.system() == 'windows') ? [binary1_dep] : []),
   cpp_args : nnedi3_main_args + binary1_symbol_args,
   cuda_args : cuda_args,
-  link_args : link_args + (host_machine.system() == 'linux' ? [
-    '-Wl,--no-undefined,-z,noexecstack',
-    # CUDA linkerではlink_wholeを使用できないため、markerの未定義参照で専用objectを抽出する
-    '-Wl,--undefined=nnedi3_avx512_build_marker',
-    # AviSynth本体にも同名のThreadPoolがあるため、プラグイン内部参照を自身へ束縛する
-    '-Wl,-Bsymbolic-functions',
-    '-Wl,--version-script=' + join_paths(meson.current_source_dir(), 'nnedi3_linux.map'),
-  ] : []),
+  link_args : nnedi3_link_args,
   link_depends : host_machine.system() == 'linux' ? files('nnedi3_linux.map') : [],
   name_prefix : '',
   install : true,

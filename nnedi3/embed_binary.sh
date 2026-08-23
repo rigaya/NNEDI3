@@ -5,6 +5,8 @@ objcopy=$1
 input=$2
 output=$3
 work_dir=$4
+object_format=$5
+object_arch=$6
 base_dir=$(pwd)
 
 case "$input" in
@@ -26,8 +28,8 @@ cp "$input_path" "$work_path/nnedi3_binary1.bin"
 cd "$work_path"
 "$objcopy" \
     -I binary \
-    -O elf64-x86-64 \
-    -B i386:x86-64 \
+    -O "$object_format" \
+    -B "$object_arch" \
     --set-section-alignment .data=64 \
     --rename-section .data=.rodata,alloc,load,readonly,data,contents \
     --redefine-sym _binary_nnedi3_binary1_bin_start=nnedi3_binary1_start \
