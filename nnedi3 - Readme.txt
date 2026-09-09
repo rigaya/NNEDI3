@@ -188,10 +188,12 @@ PARAMETERS (nnedi3):
          2 = use sse2
          3 = use sse4.1
          4 = use AVX
-         5 = use AVX2
-         6 = use FMA3
-         7 = use FMA4
-
+         5 = use AVX2 (requires AVX2 and FMA3)
+         6 = legacy alias for AVX2
+         7 = legacy alias for AVX2
+         8 = use AVX-VNNI (x64 only)
+         9 = use AVX-512 (x64 only)
+        10 = use AVX-512 VNNI (x64 only)
         ** for an older version supporting sse use v0.9.1 available at:
         **    http://bengal.missouri.edu/~kes25c/old_stuff/
 

@@ -163,7 +163,6 @@ static_assert(nnedi3_backend::CPU_SSE41 == CPUF_SSE4_1, "CPUF_SSE4_1 mismatch");
 static_assert(nnedi3_backend::CPU_AVX == CPUF_AVX, "CPUF_AVX mismatch");
 static_assert(nnedi3_backend::CPU_AVX2 == CPUF_AVX2, "CPUF_AVX2 mismatch");
 static_assert(nnedi3_backend::CPU_FMA3 == CPUF_FMA3, "CPUF_FMA3 mismatch");
-static_assert(nnedi3_backend::CPU_FMA4 == CPUF_FMA4, "CPUF_FMA4 mismatch");
 static_assert(nnedi3_backend::CPU_AVX512F == CPUF_AVX512F, "CPUF_AVX512F mismatch");
 static_assert(nnedi3_backend::CPU_AVX512DQ == CPUF_AVX512DQ, "CPUF_AVX512DQ mismatch");
 static_assert(nnedi3_backend::CPU_AVX512BW == CPUF_AVX512BW, "CPUF_AVX512BW mismatch");
@@ -171,14 +170,14 @@ static_assert(nnedi3_backend::CPU_AVX512VL == CPUF_AVX512VL, "CPUF_AVX512VL mism
 
 #if !(defined(_WIN32) || defined(_WIN64))
 // Linux では C、AVX2+FMA3、AVX-VNNI、AVX512系だけを公開する。
-static_assert(nnedi3_backend::select_linux_backend(0, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 6, "Linux の自動選択で AVX2+FMA3 を選べません");
+static_assert(nnedi3_backend::select_linux_backend(0, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 5, "Linux の自動選択で AVX2+FMA3 を選べません");
 static_assert(nnedi3_backend::select_linux_backend(0, CPUF_AVX2 | CPUF_FMA3 | nnedi3_backend::CPU_AVXVNNI).normalized_opt == 8, "Linux の自動選択で AVX-VNNI を選べません");
 static_assert(nnedi3_backend::select_linux_backend(0, CPUF_AVX2).normalized_opt == 1, "Linux で FMA3 なしの AVX2 を選択しています");
 static_assert(nnedi3_backend::select_linux_backend(4, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 1, "Linux の opt=2,3,4 は C へ正規化する必要があります");
-static_assert(nnedi3_backend::select_linux_backend(5, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 6, "Linux の opt=5 は AVX2+FMA3 へ正規化する必要があります");
+static_assert(nnedi3_backend::select_linux_backend(5, CPUF_AVX2 | CPUF_FMA3).normalized_opt == 5, "Linux の opt=5 は AVX2+FMA3 へ正規化する必要があります");
 static_assert(nnedi3_backend::select_linux_backend(7, CPUF_FMA3).normalized_opt == 1, "Linux で AVX2 なしの FMA3 を選択しています");
 static_assert(!nnedi3_backend::uses_simd_layout(nnedi3_backend::kernel_set_from_opt(1).predictor_weights), "C 版には neuron-major の重みが必要です");
-static_assert(nnedi3_backend::uses_avx2_layout(nnedi3_backend::kernel_set_from_opt(6).predictor_weights), "AVX2+FMA3 版には AVX2 配列の重みが必要です");
+static_assert(nnedi3_backend::uses_avx2_layout(nnedi3_backend::kernel_set_from_opt(5).predictor_weights), "AVX2+FMA3 版には AVX2 配列の重みが必要です");
 static_assert(nnedi3_backend::uses_avx2_layout(nnedi3_backend::kernel_set_from_opt(8).predictor_weights), "AVX-VNNI 版には AVX2 配列の重みが必要です");
 #endif
 
@@ -2063,9 +2062,9 @@ static PrescreenerKernels8 makePrescreenerKernels8(const KernelSet& backend)
 		result.newNetwork = computeNetwork0new_AVX2;
 		result.processLine = processLine0_AVX2;
 	}
-	if (backend.has_fma3) result.oldNetworkFloat = computeNetwork0_FMA3;
+	if (backend.has_avx2) result.oldNetworkFloat = computeNetwork0_AVX2;
 #if AVX512_INTRINSICS_AVAILABLE && (!defined(_WIN32) || defined(_WIN64))
-	if (backend.requested_backend == nnedi3_backend::Backend::AVX2FMA3VNNI)
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX2VNNI)
 	{
 		result.oldNetworkInt16 = computeNetwork0_i16_AVXVNNI;
 		result.newNetwork = computeNetwork0new_AVXVNNI;
@@ -2460,9 +2459,9 @@ static PrescreenerKernels16 makePrescreenerKernels16(const KernelSet& backend, c
 		result.newNetwork = computeNetwork0new_AVX2;
 		result.processLine = processLine0_AVX2_16;
 	}
-	if (backend.has_fma3) result.oldNetworkFloat = computeNetwork0_FMA3;
+	if (backend.has_avx2) result.oldNetworkFloat = computeNetwork0_AVX2;
 #if AVX512_INTRINSICS_AVAILABLE && (!defined(_WIN32) || defined(_WIN64))
-	if (backend.requested_backend == nnedi3_backend::Backend::AVX2FMA3VNNI)
+	if (backend.requested_backend == nnedi3_backend::Backend::AVX2VNNI)
 	{
 		result.oldNetworkInt16 = computeNetwork0_i16_AVXVNNI;
 		result.newNetwork = computeNetwork0new_AVXVNNI;
@@ -2744,7 +2743,7 @@ static PrescreenerKernels32 makePrescreenerKernels32(const KernelSet& backend)
 #endif
 #if AVX2_ASM_AVAILABLE
 	if (backend.has_avx2) result.processLine = processLine0_AVX2_32;
-	if (backend.has_fma3) result.network = computeNetwork0_FMA3;
+	if (backend.has_avx2) result.network = computeNetwork0_AVX2;
 #endif
 #if AVX512_INTRINSICS_AVAILABLE && (!defined(_WIN32) || defined(_WIN64))
 	if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
@@ -3041,12 +3040,12 @@ static PredictorKernels makePredictorKernels8(const KernelSet& backend,
 		e1 = e1_m16_AVX2;
 		e2 = e2_m16_AVX2;
 	}
-	if (backend.has_fma3)
+	if (backend.has_avx2)
 	{
-		floatExtract = extract_m8_FMA3;
-		floatDot = (asize%48)!=0 ? dotProd_m32_m16_FMA3 : dotProd_m48_m16_FMA3;
-		e0 = e0_m16_FMA3;
-		weightedAverage = weightedAvgElliottMul5_m16_FMA3;
+		floatExtract = extract_m8_AVX2;
+		floatDot = (asize%48)!=0 ? dotProd_m32_m16_AVX2 : dotProd_m48_m16_AVX2;
+		e0 = e0_m16_AVX2;
+		weightedAverage = weightedAvgElliottMul5_m16_AVX2;
 	}
 #endif
 #if AVX512_INTRINSICS_AVAILABLE && (!defined(_WIN32) || defined(_WIN64))
@@ -3168,7 +3167,7 @@ void evalFunc_2(void *ps)
 		if (backend.has_avx) castScale = castScale_AVX;
 #endif
 #if AVX2_ASM_AVAILABLE
-		if (backend.has_fma3) castScale = castScale_FMA3;
+		if (backend.has_avx2) castScale = castScale_AVX2;
 #endif
 #if AVX512_INTRINSICS_AVAILABLE && (!defined(_WIN32) || defined(_WIN64))
 		if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
@@ -3436,12 +3435,12 @@ static PredictorKernels makePredictorKernels16(const KernelSet& backend,
 		e1 = e1_m16_AVX2;
 		e2 = e2_m16_AVX2;
 	}
-	if (backend.has_fma3)
+	if (backend.has_avx2)
 	{
-		floatExtract = extract_m8_FMA3_16;
-		floatDot = (asize%48)!=0 ? dotProd_m32_m16_FMA3 : dotProd_m48_m16_FMA3;
-		e0 = e0_m16_FMA3;
-		weightedAverage = weightedAvgElliottMul5_m16_FMA3;
+		floatExtract = extract_m8_AVX2_16;
+		floatDot = (asize%48)!=0 ? dotProd_m32_m16_AVX2 : dotProd_m48_m16_AVX2;
+		e0 = e0_m16_AVX2;
+		weightedAverage = weightedAvgElliottMul5_m16_AVX2;
 	}
 #endif
 #if AVX512_INTRINSICS_AVAILABLE && (!defined(_WIN32) || defined(_WIN64))
@@ -3559,7 +3558,7 @@ void evalFunc_2_16(void *ps)
 		if (backend.has_avx) castScale = castScale_AVX_16;
 #endif
 #if AVX2_ASM_AVAILABLE
-		if (backend.has_fma3) castScale = castScale_FMA3_16;
+		if (backend.has_avx2) castScale = castScale_AVX2_16;
 #endif
 #if AVX512_INTRINSICS_AVAILABLE && (!defined(_WIN32) || defined(_WIN64))
 		if (nnedi3_backend::is_avx512_backend(backend.requested_backend))
@@ -3723,12 +3722,12 @@ static PredictorKernels makePredictorKernels32(const KernelSet& backend,
 		e1 = e1_m16_AVX2;
 		e2 = e2_m16_AVX2;
 	}
-	if (backend.has_fma3)
+	if (backend.has_avx2)
 	{
-		extract = extract_m8_FMA3_32;
-		dotProd = (asize%48)!=0 ? dotProd_m32_m16_FMA3 : dotProd_m48_m16_FMA3;
-		e0 = e0_m16_FMA3;
-		weightedAverage = weightedAvgElliottMul5_m16_FMA3;
+		extract = extract_m8_AVX2_32;
+		dotProd = (asize%48)!=0 ? dotProd_m32_m16_AVX2 : dotProd_m48_m16_AVX2;
+		e0 = e0_m16_AVX2;
+		weightedAverage = weightedAvgElliottMul5_m16_AVX2;
 	}
 #endif
 #if AVX512_INTRINSICS_AVAILABLE && (!defined(_WIN32) || defined(_WIN64))

@@ -161,7 +161,6 @@ static int CPUCheckForExtensions()
     }
   }
 
-  // 3DNow!, 3DNow!, ISSE, FMA4
   __cpuid(cpuinfo, 0x80000000);   
   if ((unsigned int)cpuinfo[0] >= 0x80000001)
   {
@@ -176,10 +175,6 @@ static int CPUCheckForExtensions()
     if (IS_BIT_SET(cpuinfo[3], 22))
       result |= CPUF_INTEGER_SSE;
 
-    if (result & CPUF_AVX) {
-      if (IS_BIT_SET(cpuinfo[2], 16))
-        result |= CPUF_FMA4;
-    }
   }
 
   return result;

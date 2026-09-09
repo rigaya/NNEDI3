@@ -16,26 +16,36 @@ Linux の Meson ビルド
 `meson.build` は親プロジェクトから読み込むための入口であり、単体での
 `meson setup` には対応していません。
 
-CPU backend と `opt=8`
-------------------------
+CPU backend と `opt`
+---------------------
 
-`opt=8` は Windows x64 と Linux の AVX-512 backend を明示的に選択します。
-実行には AVX2、FMA3、AVX512F、AVX512BW、AVX512DQ、AVX512VL のすべてが
-必要です。明示指定時に不足する機能がある場合は、別 backend へ暗黙に
-fallbackせず、不足しているCPU機能を示してエラーにします。Win32ビルドは
-AVX-512対象外であり、`opt=8`を指定するとx64の使用を求めるエラーになります。
+`opt` の指定値は次のとおりです。
 
-`opt=0`の自動選択は、AVX-512対応CPU上でも従来どおりAVX2 + FMA3を選びます。
-7950X/WSL2で行った情報目的の測定では、処理内容によってAVX-512が速い場合と
-遅い場合が混在しました。native Windows/Linux環境で自動選択に必要な性能を
-測定できていないため、AVX-512は明示的な`opt=8`に限定しています。
+- `0`: 自動選択
+- `1`: C
+- `2`: SSE2
+- `3`: SSE4.1
+- `4`: AVX
+- `5`: AVX2
+- `6`, `7`: AVX2の旧設定互換alias
+- `8`: AVX-VNNI
+- `9`: AVX-512
+- `10`: AVX-512 VNNI
 
-積和をFMAへ合成する実装は、AVX2 + FMA3とAVX-512の経路で使用します。
+AVX2 backendは旧FMA3実装を使用するため、CPU機能としてAVX2とFMA3の両方を
+必要とします。`opt=5..7`はすべてAVX2 backendへ正規化します。旧AVX2-only実装と
+FMA4実装は使用しません。
+
+`opt=8..10`の明示指定時に必要なCPU機能が不足している場合は、別backendへ暗黙に
+fallbackせず、不足しているCPU機能を示してエラーにします。Windowsでは`opt=5..7`
+についても同様です。Linuxでは従来どおり、`opt=5..7`を利用できないCPUではC backendへ
+fallbackします。Win32ビルドは`opt=8..10`の対象外です。`opt=0`では、CPUが対応する
+最上位のbackendを自動的に選択します。
+
+積和をFMAへ合成する実装は、AVX2とAVX-512の経路で使用します。
 C経路はFMAを持たないCPUでも実行できる必要があるため、乗算と加算を分離した
 scalar実装を維持しています。Linuxのmain翻訳単位には`-ffp-contract=off`を指定し、
-外部のCPU指定による暗黙のFMA合成も禁止します。`opt=5..7`は独立した
-AVX2-only/FMA4 backendとはせず、サポートされるCPU経路ではAVX2 + FMA3の
-`opt=6`として扱います。
+外部のCPU指定による暗黙のFMA合成も禁止します。
 
 AVX-512 の対応範囲
 ------------------
@@ -49,7 +59,7 @@ WindowsとLinuxに共通のintrinsic実装を使用します。
 - processLine、castScale、YUY2とplanar 4:2:2、RGB24とplanar 4:4:4の相互変換
 
 AVX-512専用関数へ置換しない制御処理、バッファ操作、重みの前処理などの補助処理は、
-既存のAVX2 + FMA3 backendを基底として利用します。また、15/16bit入力でint16
+既存のAVX2 backendを基底として利用します。また、15/16bit入力でint16
 predictorまたはold/new prescreenerのint16 dot-productを選ぶ経路はC実装へfallbackし、
 C用の重み配置を使用します。CUDA kernelは今回のCPU AVX-512対応の対象外です。
 
