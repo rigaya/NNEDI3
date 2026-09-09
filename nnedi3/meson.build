@@ -1,3 +1,17 @@
+# AVX-VNNI (VEX形式のvpdpbusd) はgcc 11以降かつbinutils 2.36以降でないと通らない。
+# Ubuntu 20.04のような古いツールチェインではこの翻訳単位の実装を無効化し、
+# ランタイムディスパッチからもAVX-VNNIを外してAVX2実装へフォールバックさせる。
+nnedi3_cpp = meson.get_compiler('cpp')
+nnedi3_has_avxvnni = false
+if is_x86
+  nnedi3_has_avxvnni = nnedi3_cpp.compiles('''#include <immintrin.h>
+__attribute__((target("avx2,fma,avxvnni")))
+__m256i probe(__m256i a, __m256i b, __m256i c) { return _mm256_dpbusd_avx_epi32(a, b, c); }
+''',
+    args : ['-mavx2', '-mfma'], name : 'AVX-VNNI')
+endif
+nnedi3_avxvnni_args = nnedi3_has_avxvnni ? [] : ['-DNNEDI3_DISABLE_AVXVNNI=1']
+
 nnedi3_sources = [
   'nnedi3.cpp',
   'PlanarFrame.cpp',
@@ -21,7 +35,7 @@ nnedi3_avx512_sources = [
   'nnedi3_intrinsic_AVX512_process.cpp',
 ]
 
-nnedi3_main_args = cpp_args
+nnedi3_main_args = cpp_args + nnedi3_avxvnni_args
 if host_machine.system() == 'linux'
   # Cバックエンドの演算順序を維持する
   nnedi3_main_args += ['-ffp-contract=off']
@@ -50,11 +64,12 @@ if not (host_machine.system() == 'windows')
 endif
 
 # x86でのみx86専用のSIMD実装をビルドする
+nnedi3_avx2_args = avx2_args + nnedi3_avxvnni_args
 if is_x86
   nnedi3_avx2_lib = static_library('nnedi3_avx2',
     nnedi3_avx2_sources,
     include_directories : include_directories('.', './compat'),
-    cpp_args : avx2_args,
+    cpp_args : nnedi3_avx2_args,
     name_prefix : '',
   )
   nnedi3_avx2_dep = declare_dependency(link_with: nnedi3_avx2_lib)

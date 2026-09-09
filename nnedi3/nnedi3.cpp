@@ -330,12 +330,15 @@ static int detectVnniCpuFlags()
 	__cpuidex(leaf7, 7, 0);
 	int result = (leaf7[2] & (1 << 11)) != 0
 		? nnedi3_backend::CPU_AVX512VNNI : 0;
+#if !defined(NNEDI3_DISABLE_AVXVNNI)
+	// ビルド時にAVX-VNNIを無効化した場合は、CPUが対応していても報告しない
 	if (leaf7[0] >= 1)
 	{
 		__cpuidex(leaf7, 7, 1);
 		if ((leaf7[0] & (1 << 4)) != 0)
 			result |= nnedi3_backend::CPU_AVXVNNI;
 	}
+#endif
 	return result;
 #else
 	const unsigned int maxLeaf = __get_cpuid_max(0, nullptr);
@@ -344,9 +347,12 @@ static int detectVnniCpuFlags()
 	if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx) == 0) return 0;
 	int result = (ecx & (1u << 11)) != 0
 		? nnedi3_backend::CPU_AVX512VNNI : 0;
+#if !defined(NNEDI3_DISABLE_AVXVNNI)
+	// ビルド時にAVX-VNNIを無効化した場合は、CPUが対応していても報告しない
 	if (eax >= 1 && __get_cpuid_count(7, 1, &eax, &ebx, &ecx, &edx) != 0
 		&& (eax & (1u << 4)) != 0)
 		result |= nnedi3_backend::CPU_AVXVNNI;
+#endif
 	return result;
 #endif
 }
