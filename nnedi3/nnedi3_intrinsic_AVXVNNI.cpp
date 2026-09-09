@@ -6,6 +6,43 @@
 #include <cstdint>
 #include <cstring>
 
+#if defined(NNEDI3_DISABLE_AVXVNNI)
+
+// AVX-VNNIを扱えないツールチェイン向けのフォールバック。
+// nnedi3.cpp側のCPU判定でもAVX-VNNIは報告しないため、通常この経路は選ばれない。
+// リンクを保ち、万一呼ばれても正しい結果を返すようAVX2実装へ転送する。
+#include "nnedi3_intrinsic.h"
+
+extern "C" {
+
+void computeNetwork0_i16_AVXVNNI(
+    const float* input, const float* weights, std::uint8_t* result)
+{
+    computeNetwork0_i16_AVX2(input, weights, result);
+}
+
+void computeNetwork0new_AVXVNNI(
+    const float* input, const float* weights, std::uint8_t* result)
+{
+    computeNetwork0new_AVX2(input, weights, result);
+}
+
+void dotProd_m32_m16_i16_AVXVNNI(const float* data, const float* weights,
+    float* vals, int n, int len, const float* istd)
+{
+    dotProd_m32_m16_i16_AVX2(data, weights, vals, n, len, istd);
+}
+
+void dotProd_m48_m16_i16_AVXVNNI(const float* data, const float* weights,
+    float* vals, int n, int len, const float* istd)
+{
+    dotProd_m48_m16_i16_AVX2(data, weights, vals, n, len, istd);
+}
+
+}
+
+#else
+
 #if defined(__GNUC__) || defined(__clang__)
 #define NNEDI3_AVXVNNI_TARGET __attribute__((target("avx2,fma,avxvnni")))
 #else
@@ -287,3 +324,5 @@ void dotProd_m48_m16_i16_AVXVNNI(const float* data, const float* weights,
 }
 
 #undef NNEDI3_AVXVNNI_TARGET
+
+#endif // NNEDI3_DISABLE_AVXVNNI
