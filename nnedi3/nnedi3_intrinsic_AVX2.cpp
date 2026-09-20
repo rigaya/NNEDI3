@@ -5,11 +5,11 @@
 #include <cstring>
 #include "nnedi3_intrinsic.h"
 
-// Intrinsics friendly data definitions
+// ロード時に SIMD 命令を実行しないよう、定数初期化される配列で保持する。
 namespace {
 
 // From .data section
-const float NNEDI3_FLT_EPSILON = 1.192092896e-07f;
+static constexpr float NNEDI3_FLT_EPSILON = 1.192092896e-07f;
 
 // align 16
 // sign_bits_f_zero_l qword 7FFFFFFF00000000h,7FFFFFFF7FFFFFFFh
@@ -17,111 +17,216 @@ const float NNEDI3_FLT_EPSILON = 1.192092896e-07f;
 // low qword: 0x7FFFFFFF00000000 -> low dword: 0x00000000, high dword: 0x7FFFFFFF
 // high qword: 0x7FFFFFFF7FFFFFFF -> low dword: 0x7FFFFFFF, high dword: 0x7FFFFFFF
 // So, as epi32: {0x00000000, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF} (little endian for set_epi32)
-alignas(16) const __m128 sign_bits_f_zero_l = _mm_castsi128_ps(_mm_set_epi32(0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x00000000));
+alignas(16) static constexpr uint32_t sign_bits_f_zero_l[4] = {
+    0x00000000, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF
+};
 
 // sign_bits_f qword 2 dup(7FFFFFFF7FFFFFFFh)
 // This means 4 dwords of 0x7FFFFFFF
-alignas(16) const __m128 sign_bits_f = _mm_castsi128_ps(_mm_set1_epi32(0x7FFFFFFF));
+alignas(16) static constexpr uint32_t sign_bits_f[4] = {
+    0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF
+};
 
 // ones_f real4 4 dup(1.0)
-alignas(16) const __m128 ones_f = _mm_set1_ps(1.0f);
+alignas(16) static constexpr float ones_f[4] = {
+    1.0f, 1.0f, 1.0f, 1.0f
+};
 
 // flt_epsilon_sse real4 4 dup(FLT_EPSILON)
-alignas(16) const __m128 flt_epsilon_sse = _mm_set1_ps(NNEDI3_FLT_EPSILON);
+alignas(16) static constexpr float flt_epsilon_sse[4] = {
+    NNEDI3_FLT_EPSILON, NNEDI3_FLT_EPSILON, NNEDI3_FLT_EPSILON, NNEDI3_FLT_EPSILON
+};
 
 // min_weight_sum real4 4 dup(1.0e-10)
-alignas(16) const __m128 min_weight_sum = _mm_set1_ps(1.0e-10f);
+alignas(16) static constexpr float min_weight_sum[4] = {
+    1.0e-10f, 1.0e-10f, 1.0e-10f, 1.0e-10f
+};
 // five_f real4 4 dup(5.0)
-alignas(16) const __m128 five_f = _mm_set1_ps(5.0f);
+alignas(16) static constexpr float five_f[4] = {
+    5.0f, 5.0f, 5.0f, 5.0f
+};
 
 // sse_half real4 4 dup(0.5)
-alignas(16) const __m128 sse_half = _mm_set1_ps(0.5f);
+alignas(16) static constexpr float sse_half[4] = {
+    0.5f, 0.5f, 0.5f, 0.5f
+};
 
 // data segment align(32)
 // exp_hi real4 8 dup(80.0)
-alignas(32) const __m256 exp_hi = _mm256_set1_ps(80.0f);
+alignas(32) static constexpr float exp_hi[8] = {
+    80.0f, 80.0f, 80.0f, 80.0f, 80.0f, 80.0f, 80.0f, 80.0f
+};
 // exp_lo real4 8 dup(-80.0)
-alignas(32) const __m256 exp_lo = _mm256_set1_ps(-80.0f);
+alignas(32) static constexpr float exp_lo[8] = {
+    -80.0f, -80.0f, -80.0f, -80.0f, -80.0f, -80.0f, -80.0f, -80.0f
+};
 
 // e0_mult real4 8 dup(12102203.161561486)
-alignas(32) const __m256 e0_mult = _mm256_set1_ps(12102203.161561486f);
+alignas(32) static constexpr float e0_mult[8] = {
+    12102203.161561486f, 12102203.161561486f, 12102203.161561486f, 12102203.161561486f, 12102203.161561486f, 12102203.161561486f, 12102203.161561486f, 12102203.161561486f
+};
 // e0_bias real4 8 dup(1064866805.0)
-alignas(32) const __m256 e0_bias = _mm256_set1_ps(1064866805.0f);
+alignas(32) static constexpr float e0_bias[8] = {
+    1064866805.0f, 1064866805.0f, 1064866805.0f, 1064866805.0f, 1064866805.0f, 1064866805.0f, 1064866805.0f, 1064866805.0f
+};
 
 // e1_scale real4 8 dup(1.4426950409)
-alignas(32) const __m256 e1_scale = _mm256_set1_ps(1.4426950409f);
+alignas(32) static constexpr float e1_scale[8] = {
+    1.4426950409f, 1.4426950409f, 1.4426950409f, 1.4426950409f, 1.4426950409f, 1.4426950409f, 1.4426950409f, 1.4426950409f
+};
 // e1_bias real4 8 dup(12582912.0)
-alignas(32) const __m256 e1_bias_ps = _mm256_set1_ps(12582912.0f); // For ps operations
-alignas(32) const __m256i e1_bias_si = _mm256_set1_epi32(12582912);    // For integer interpretation (3<<22)
+alignas(32) static constexpr float e1_bias_ps[8] = {
+    12582912.0f, 12582912.0f, 12582912.0f, 12582912.0f, 12582912.0f, 12582912.0f, 12582912.0f, 12582912.0f
+}; // For ps operations
+alignas(32) static constexpr int32_t e1_bias_si[8] = {
+    12582912, 12582912, 12582912, 12582912, 12582912, 12582912, 12582912, 12582912
+};    // For integer interpretation (3<<22)
 
 // e1_c1 real4 8 dup(0.701277797)
-alignas(32) const __m256 e1_c1 = _mm256_set1_ps(0.701277797f);
+alignas(32) static constexpr float e1_c1[8] = {
+    0.701277797f, 0.701277797f, 0.701277797f, 0.701277797f, 0.701277797f, 0.701277797f, 0.701277797f, 0.701277797f
+};
 // e1_c2 real4 8 dup(0.237348593)
-alignas(32) const __m256 e1_c2 = _mm256_set1_ps(0.237348593f);
+alignas(32) static constexpr float e1_c2[8] = {
+    0.237348593f, 0.237348593f, 0.237348593f, 0.237348593f, 0.237348593f, 0.237348593f, 0.237348593f, 0.237348593f
+};
 // e1_c0 real4 8 dup(1.00035)
-alignas(32) const __m256 e1_c0 = _mm256_set1_ps(1.00035f);
+alignas(32) static constexpr float e1_c0[8] = {
+    1.00035f, 1.00035f, 1.00035f, 1.00035f, 1.00035f, 1.00035f, 1.00035f, 1.00035f
+};
 
 // exp_rln2 real4 8 dup(1.442695041)
-alignas(32) const __m256 exp_rln2 = _mm256_set1_ps(1.442695041f);
+alignas(32) static constexpr float exp_rln2[8] = {
+    1.442695041f, 1.442695041f, 1.442695041f, 1.442695041f, 1.442695041f, 1.442695041f, 1.442695041f, 1.442695041f
+};
 // am_0p5 real4 8 dup(0.5)
-alignas(32) const __m256 am_0p5 = _mm256_set1_ps(0.5f);
+alignas(32) static constexpr float am_0p5[8] = {
+    0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f
+};
 // epi32_1 sdword 8 dup(1)
-alignas(32) const __m256i epi32_1 = _mm256_set1_epi32(1);
+alignas(32) static constexpr int32_t epi32_1[8] = {
+    1, 1, 1, 1, 1, 1, 1, 1
+};
 // exp_c2 real4 8 dup(1.428606820e-6)
-alignas(32) const __m256 exp_c2 = _mm256_set1_ps(1.428606820e-6f);
+alignas(32) static constexpr float exp_c2[8] = {
+    1.428606820e-6f, 1.428606820e-6f, 1.428606820e-6f, 1.428606820e-6f, 1.428606820e-6f, 1.428606820e-6f, 1.428606820e-6f, 1.428606820e-6f
+};
 // exp_c1 real4 8 dup(6.931457520e-1)
-alignas(32) const __m256 exp_c1 = _mm256_set1_ps(6.931457520e-1f);
+alignas(32) static constexpr float exp_c1[8] = {
+    6.931457520e-1f, 6.931457520e-1f, 6.931457520e-1f, 6.931457520e-1f, 6.931457520e-1f, 6.931457520e-1f, 6.931457520e-1f, 6.931457520e-1f
+};
 // exp_q0 real4 8 dup(3.001985051e-6)
-alignas(32) const __m256 exp_q0 = _mm256_set1_ps(3.001985051e-6f);
+alignas(32) static constexpr float exp_q0[8] = {
+    3.001985051e-6f, 3.001985051e-6f, 3.001985051e-6f, 3.001985051e-6f, 3.001985051e-6f, 3.001985051e-6f, 3.001985051e-6f, 3.001985051e-6f
+};
 // exp_p0 real4 8 dup(1.261771931e-4)
-alignas(32) const __m256 exp_p0 = _mm256_set1_ps(1.261771931e-4f);
+alignas(32) static constexpr float exp_p0[8] = {
+    1.261771931e-4f, 1.261771931e-4f, 1.261771931e-4f, 1.261771931e-4f, 1.261771931e-4f, 1.261771931e-4f, 1.261771931e-4f, 1.261771931e-4f
+};
 // epi32_0x7f sdword 8 dup(7Fh)
-alignas(32) const __m256i epi32_0x7f = _mm256_set1_epi32(0x7F);
+alignas(32) static constexpr int32_t epi32_0x7f[8] = {
+    0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F
+};
 // exp_q1 real4 8 dup(2.524483403e-3)
-alignas(32) const __m256 exp_q1 = _mm256_set1_ps(2.524483403e-3f);
+alignas(32) static constexpr float exp_q1[8] = {
+    2.524483403e-3f, 2.524483403e-3f, 2.524483403e-3f, 2.524483403e-3f, 2.524483403e-3f, 2.524483403e-3f, 2.524483403e-3f, 2.524483403e-3f
+};
 // exp_p1 real4 8 dup(3.029944077e-2)
-alignas(32) const __m256 exp_p1 = _mm256_set1_ps(3.029944077e-2f);
+alignas(32) static constexpr float exp_p1[8] = {
+    3.029944077e-2f, 3.029944077e-2f, 3.029944077e-2f, 3.029944077e-2f, 3.029944077e-2f, 3.029944077e-2f, 3.029944077e-2f, 3.029944077e-2f
+};
 // exp_q2 real4 8 dup(2.272655482e-1)
-alignas(32) const __m256 exp_q2 = _mm256_set1_ps(2.272655482e-1f);
+alignas(32) static constexpr float exp_q2[8] = {
+    2.272655482e-1f, 2.272655482e-1f, 2.272655482e-1f, 2.272655482e-1f, 2.272655482e-1f, 2.272655482e-1f, 2.272655482e-1f, 2.272655482e-1f
+};
 // am_1 real4 8 dup(1.0)
-alignas(32) const __m256 am_1 = _mm256_set1_ps(1.0f);
+alignas(32) static constexpr float am_1[8] = {
+    1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f
+};
 // exp_q3 real4 8 dup(2.0)
-alignas(32) const __m256 exp_q3 = _mm256_set1_ps(2.0f);
+alignas(32) static constexpr float exp_q3[8] = {
+    2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f
+};
 
 // w_19 sword 16 dup(19)
-alignas(32) const __m256i w_19 = _mm256_set1_epi16(19);
+alignas(32) static constexpr int16_t w_19[16] = {
+    19, 19, 19, 19, 19, 19, 19, 19,
+    19, 19, 19, 19, 19, 19, 19, 19
+};
 // w_3 sword 16 dup(3)
-alignas(32) const __m256i w_3 = _mm256_set1_epi16(3);
+alignas(32) static constexpr int16_t w_3[16] = {
+    3, 3, 3, 3, 3, 3, 3, 3,
+    3, 3, 3, 3, 3, 3, 3, 3
+};
 // uw_16 word 16 dup(16)
-alignas(32) const __m256i uw_16 = _mm256_set1_epi16(16); // unsigned, but stored in signed type for intrinsics
+alignas(32) static constexpr int16_t uw_16[16] = {
+    16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16
+}; // unsigned, but stored in signed type for intrinsics
 // ub_1 byte 32 dup(1)
-alignas(32) const __m256i ub_1 = _mm256_set1_epi8(1);
+alignas(32) static constexpr int8_t ub_1[32] = {
+    1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1
+};
 
 // d_19 sdword 8 dup(19)
-alignas(32) const __m256i d_19 = _mm256_set1_epi32(19);
+alignas(32) static constexpr int32_t d_19[8] = {
+    19, 19, 19, 19, 19, 19, 19, 19
+};
 // d_3 sdword 8 dup(3)
-alignas(32) const __m256i d_3 = _mm256_set1_epi32(3);
+alignas(32) static constexpr int32_t d_3[8] = {
+    3, 3, 3, 3, 3, 3, 3, 3
+};
 // ud_16 dword 16 dup(16) -> This looks like a typo, dword is 32-bit, so 8 elements for YMM. If it is 16 elements of 16-bit, it's uw_16.
 // Assuming it means 8 dwords of 16.
-alignas(32) const __m256i ud_16 = _mm256_set1_epi32(16); // unsigned, but stored in signed type
+alignas(32) static constexpr int32_t ud_16[8] = {
+    16, 16, 16, 16, 16, 16, 16, 16
+}; // unsigned, but stored in signed type
 // uw_1 word 16 dup(1)
-alignas(32) const __m256i uw_1 = _mm256_set1_epi16(1);
+alignas(32) static constexpr int16_t uw_1[16] = {
+    1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1
+};
 
 // f_19 real4 8 dup(0.59375)  (19/32)
-alignas(32) const __m256 f_19 = _mm256_set1_ps(0.59375f);
+alignas(32) static constexpr float f_19[8] = {
+    0.59375f, 0.59375f, 0.59375f, 0.59375f, 0.59375f, 0.59375f, 0.59375f, 0.59375f
+};
 // f_3 real4 8 dup(0.09375)   (3/32)
-alignas(32) const __m256 f_3 = _mm256_set1_ps(0.09375f);
+alignas(32) static constexpr float f_3[8] = {
+    0.09375f, 0.09375f, 0.09375f, 0.09375f, 0.09375f, 0.09375f, 0.09375f, 0.09375f
+};
 
 // sign_bits_f_32 qword 4 dup(7FFFFFFF7FFFFFFFh)
 // This means 8 dwords of 0x7FFFFFFF for a YMM register
-alignas(32) const __m256 sign_bits_f_32 = _mm256_castsi256_ps(_mm256_set1_epi32(0x7FFFFFFF));
+alignas(32) static constexpr uint32_t sign_bits_f_32[8] = {
+    0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF
+};
 // ones_f_32 real4 8 dup(1.0)
-alignas(32) const __m256 ones_f_32 = _mm256_set1_ps(1.0f);
+alignas(32) static constexpr float ones_f_32[8] = {
+    1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f
+};
 
-alignas(32) static const __m256i w_19_m256i = _mm256_set1_epi16(19);
-alignas(32) static const __m256i w_3_m256i = _mm256_set1_epi16(3);
-alignas(32) static const __m256i ub_1_m256i = _mm256_set1_epi8(1);
-alignas(32) static const __m256i uw_16_m256i = _mm256_set1_epi16(16);
+alignas(32) static constexpr int16_t w_19_m256i[16] = {
+    19, 19, 19, 19, 19, 19, 19, 19,
+    19, 19, 19, 19, 19, 19, 19, 19
+};
+alignas(32) static constexpr int16_t w_3_m256i[16] = {
+    3, 3, 3, 3, 3, 3, 3, 3,
+    3, 3, 3, 3, 3, 3, 3, 3
+};
+alignas(32) static constexpr int8_t ub_1_m256i[32] = {
+    1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1
+};
+alignas(32) static constexpr int16_t uw_16_m256i[16] = {
+    16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16
+};
 
 } // anonymous namespace
 
@@ -233,7 +338,7 @@ extern "C" void computeNetwork0_AVX2(const float *input, const float *weights, u
     
     const __m128 first_layer_raw = xmm0;
     xmm0 = _mm_div_ps(xmm0,
-        _mm_add_ps(_mm_and_ps(xmm0, sign_bits_f), ones_f));
+        _mm_add_ps(_mm_and_ps(xmm0, _mm_castsi128_ps(_mm_load_si128(reinterpret_cast<const __m128i*>(sign_bits_f)))), _mm_load_ps(ones_f)));
     const __m128 first_features = _mm_blend_ps(xmm0, first_layer_raw, 0x01);
 
     // 第2層はbiasから開始し、4入力をすべてFMAで順に加える。
@@ -248,7 +353,7 @@ extern "C" void computeNetwork0_AVX2(const float *input, const float *weights, u
         _mm_load_ps(weights + 208), xmm1);
     
     const __m128 xmm7 = _mm_div_ps(xmm1,
-        _mm_add_ps(_mm_and_ps(xmm1, sign_bits_f), ones_f));
+        _mm_add_ps(_mm_and_ps(xmm1, _mm_castsi128_ps(_mm_load_si128(reinterpret_cast<const __m128i*>(sign_bits_f)))), _mm_load_ps(ones_f)));
     
     // 最終層もbiasから開始し、8入力をすべてFMAで順に加える。
     xmm0 = _mm_load_ps(weights + 248);
@@ -386,7 +491,7 @@ void computeNetwork0_i16_AVX2(const float* inputf_raw, const float* weightsf_raw
 
     const __m128 first_layer_raw = xmm0_ps;
     xmm0_ps = _mm_div_ps(xmm0_ps,
-        _mm_add_ps(_mm_and_ps(xmm0_ps, sign_bits_f), ones_f));
+        _mm_add_ps(_mm_and_ps(xmm0_ps, _mm_castsi128_ps(_mm_load_si128(reinterpret_cast<const __m128i*>(sign_bits_f)))), _mm_load_ps(ones_f)));
     xmm0_ps = _mm_blend_ps(xmm0_ps, first_layer_raw, 0x01);
 
     __m128 xmm1 = _mm_load_ps((float*)(weightsf + 240));
@@ -401,7 +506,7 @@ void computeNetwork0_i16_AVX2(const float* inputf_raw, const float* weightsf_raw
 
     // 第2層のElliott活性化
     const __m128 xmm7 = _mm_div_ps(xmm1,
-        _mm_add_ps(_mm_and_ps(xmm1, sign_bits_f), ones_f));
+        _mm_add_ps(_mm_and_ps(xmm1, _mm_castsi128_ps(_mm_load_si128(reinterpret_cast<const __m128i*>(sign_bits_f)))), _mm_load_ps(ones_f)));
 
     // 最終層: 第1層4値と第2層4値から4出力を計算する
     __m128 xmm0_l0 = _mm_load_ps((const float*)(weightsf + 312));
@@ -544,7 +649,7 @@ extern "C" void computeNetwork0new_AVX2(const float* datai_raw, const float* wei
     xmm0_ps = _mm_fmadd_ps(xmm0_ps, _mm_load_ps(rax + 128),
         _mm_load_ps(rax + 132));
     xmm0_ps = _mm_div_ps(xmm0_ps,
-        _mm_add_ps(_mm_and_ps(xmm0_ps, sign_bits_f), ones_f));
+        _mm_add_ps(_mm_and_ps(xmm0_ps, _mm_castsi128_ps(_mm_load_si128(reinterpret_cast<const __m128i*>(sign_bits_f)))), _mm_load_ps(ones_f)));
 
     __m128 xmm1 = _mm_load_ps(rax + 152);
     xmm1 = _mm_fmadd_ps(_mm_shuffle_ps(xmm0_ps, xmm0_ps, 0x00),
@@ -1815,13 +1920,13 @@ extern "C" void e0_m16_AVX2(
 
     // 定数のロード
     // vmovdqa ymm2,YMMWORD ptr exp_hi
-    __m256 ymm2 = _mm256_load_ps((float*)&exp_hi);
+    __m256 ymm2 = _mm256_load_ps(exp_hi);
     // vmovdqa ymm3,YMMWORD ptr exp_lo
-    __m256 ymm3 = _mm256_load_ps((float*)&exp_lo);
+    __m256 ymm3 = _mm256_load_ps(exp_lo);
     // vmovdqa ymm4,YMMWORD ptr e0_mult
-    __m256 ymm4 = _mm256_load_ps((float*)&e0_mult);
+    __m256 ymm4 = _mm256_load_ps(e0_mult);
     // vmovdqa ymm5,YMMWORD ptr e0_bias
-    __m256 ymm5 = _mm256_load_ps((float*)&e0_bias);
+    __m256 ymm5 = _mm256_load_ps(e0_bias);
 
     // eloop16_2
     while (rcx != 0) {
@@ -1879,19 +1984,19 @@ extern "C" void e1_m16_AVX2(
 
     // 定数のロード
     // vmovdqa ymm3,YMMWORD ptr exp_hi
-    __m256 ymm3 = _mm256_load_ps((float*)&exp_hi);
+    __m256 ymm3 = _mm256_load_ps(exp_hi);
     // vmovdqa ymm4,YMMWORD ptr exp_lo
-    __m256 ymm4 = _mm256_load_ps((float*)&exp_lo);
+    __m256 ymm4 = _mm256_load_ps(exp_lo);
     // vmovdqa ymm5,YMMWORD ptr e1_scale
-    __m256 ymm5 = _mm256_load_ps((float*)&e1_scale);
+    __m256 ymm5 = _mm256_load_ps(e1_scale);
     // vmovdqa ymm6,YMMWORD ptr e1_bias
-    __m256 ymm6 = _mm256_load_ps((float*)&e1_bias_ps);
+    __m256 ymm6 = _mm256_load_ps(e1_bias_ps);
     // vmovdqa ymm7,YMMWORD ptr e1_c1
-    __m256 ymm7 = _mm256_load_ps((float*)&e1_c1);
+    __m256 ymm7 = _mm256_load_ps(e1_c1);
     // vmovdqa ymm8,YMMWORD ptr e1_c2
-    __m256 ymm8 = _mm256_load_ps((float*)&e1_c2);
+    __m256 ymm8 = _mm256_load_ps(e1_c2);
     // vmovdqa ymm9,YMMWORD ptr e1_c0
-    __m256 ymm9 = _mm256_load_ps((float*)&e1_c0);
+    __m256 ymm9 = _mm256_load_ps(e1_c0);
 
     // eloop8
     while (rcx != 0) {
@@ -1946,23 +2051,23 @@ extern "C" void e2_m16_AVX2(
 
     // 定数のロード
     // vmovdqa ymm7,YMMWORD ptr exp_hi
-    __m256 ymm7 = _mm256_load_ps((float*)&exp_hi);
+    __m256 ymm7 = _mm256_load_ps(exp_hi);
     // vmovdqa ymm8,YMMWORD ptr exp_lo
-    __m256 ymm8 = _mm256_load_ps((float*)&exp_lo);
+    __m256 ymm8 = _mm256_load_ps(exp_lo);
     // vmovdqa ymm9,YMMWORD ptr exp_rln2
-    __m256 ymm9 = _mm256_load_ps((float*)&exp_rln2);
+    __m256 ymm9 = _mm256_load_ps(exp_rln2);
     // vmovdqa ymm10,YMMWORD ptr am_0p5
-    __m256 ymm10 = _mm256_load_ps((float*)&am_0p5);
+    __m256 ymm10 = _mm256_load_ps(am_0p5);
     // vmovdqa ymm11,YMMWORD ptr epi32_1
-    __m256i ymm11 = _mm256_load_si256((__m256i*)&epi32_1);
+    __m256i ymm11 = _mm256_load_si256(reinterpret_cast<const __m256i*>(epi32_1));
     // vmovdqa ymm12,YMMWORD ptr exp_c2
-    __m256 ymm12 = _mm256_load_ps((float*)&exp_c2);
+    __m256 ymm12 = _mm256_load_ps(exp_c2);
     // vmovdqa ymm13,YMMWORD ptr exp_c1
-    __m256 ymm13 = _mm256_load_ps((float*)&exp_c1);
+    __m256 ymm13 = _mm256_load_ps(exp_c1);
     // vmovdqa ymm14,YMMWORD ptr exp_q0
-    __m256 ymm14 = _mm256_load_ps((float*)&exp_q0);
+    __m256 ymm14 = _mm256_load_ps(exp_q0);
     // vmovdqa ymm15,YMMWORD ptr am_1
-    __m256 ymm15 = _mm256_load_ps((float*)&am_1);
+    __m256 ymm15 = _mm256_load_ps(am_1);
 
     // eloop4
     while (rcx != 0) {
@@ -1991,22 +2096,22 @@ extern "C" void e2_m16_AVX2(
         // FMA化: vfnmadd231ps ymm0,ymm3,ymm13
         ymm0 = _mm256_fnmadd_ps(ymm3, ymm13, ymm0);
         // vpaddd ymm1,ymm1,YMMWORD ptr epi32_0x7f
-        ymm1_i = _mm256_add_epi32(ymm1_i, _mm256_load_si256((__m256i*)&epi32_0x7f));
+        ymm1_i = _mm256_add_epi32(ymm1_i, _mm256_load_si256(reinterpret_cast<const __m256i*>(epi32_0x7f)));
         // vmovaps ymm2,ymm0
         __m256 ymm2_ps = ymm0;
         // vmulps ymm0,ymm0,ymm0
         ymm0 = _mm256_mul_ps(ymm0, ymm0);
         // FMA化: vfmadd213ps ymm6,ymm0,YMMWORD ptr exp_q1
-        __m256 ymm6 = _mm256_fmadd_ps(ymm14, ymm0, _mm256_load_ps((float*)&exp_q1));
+        __m256 ymm6 = _mm256_fmadd_ps(ymm14, ymm0, _mm256_load_ps(exp_q1));
         // FMA化: vfmadd213ps ymm4,ymm0,YMMWORD ptr exp_p1
-        __m256 ymm4 = _mm256_fmadd_ps(_mm256_load_ps((float*)&exp_p0), ymm0,
-            _mm256_load_ps((float*)&exp_p1));
+        __m256 ymm4 = _mm256_fmadd_ps(_mm256_load_ps(exp_p0), ymm0,
+            _mm256_load_ps(exp_p1));
         // FMA化: vfmadd213ps ymm6,ymm0,YMMWORD ptr exp_q2
-        ymm6 = _mm256_fmadd_ps(ymm6, ymm0, _mm256_load_ps((float*)&exp_q2));
+        ymm6 = _mm256_fmadd_ps(ymm6, ymm0, _mm256_load_ps(exp_q2));
         // vmulps ymm4,ymm4,ymm0
         ymm4 = _mm256_mul_ps(ymm4, ymm0);
         // FMA化: vfmadd213ps ymm6,ymm0,YMMWORD ptr exp_q3
-        ymm6 = _mm256_fmadd_ps(ymm6, ymm0, _mm256_load_ps((float*)&exp_q3));
+        ymm6 = _mm256_fmadd_ps(ymm6, ymm0, _mm256_load_ps(exp_q3));
         // FMA化: vfmadd231ps ymm2,ymm4,ymm2
         ymm2_ps = _mm256_fmadd_ps(ymm4, ymm2_ps, ymm2_ps);
         // vpslld ymm1,ymm1,23
@@ -2016,7 +2121,7 @@ extern "C" void e2_m16_AVX2(
         // vdivps ymm2,ymm2,ymm6
         ymm2_ps = _mm256_div_ps(ymm2_ps, ymm6);
         // FMA化: vfmadd213ps ymm0,YMMWORD ptr exp_q3,ymm15
-        ymm0 = _mm256_fmadd_ps(ymm2_ps, _mm256_load_ps((float*)&exp_q3), ymm15);
+        ymm0 = _mm256_fmadd_ps(ymm2_ps, _mm256_load_ps(exp_q3), ymm15);
         // vmulps ymm0,ymm0,ymm1
         ymm0 = _mm256_mul_ps(ymm0, _mm256_castsi256_ps(ymm1_i));
         // vmovaps YMMWORD ptr [rax],ymm0
@@ -2060,13 +2165,13 @@ extern "C" int processLine0_AVX2_ASM(
 
     // 定数のロード
     // vmovdqa ymm8,YMMWORD ptr w_19
-    __m256i ymm8 = _mm256_load_si256((__m256i*)&w_19);
+    __m256i ymm8 = _mm256_load_si256(reinterpret_cast<const __m256i*>(w_19));
     // vmovdqa ymm9,YMMWORD ptr w_3
-    __m256i ymm9 = _mm256_load_si256((__m256i*)&w_3);
+    __m256i ymm9 = _mm256_load_si256(reinterpret_cast<const __m256i*>(w_3));
     // vmovdqa ymm10,YMMWORD ptr ub_1
-    __m256i ymm10 = _mm256_load_si256((__m256i*)&ub_1);
+    __m256i ymm10 = _mm256_load_si256(reinterpret_cast<const __m256i*>(ub_1));
     // vmovdqa ymm11,YMMWORD ptr uw_16
-    __m256i ymm11 = _mm256_load_si256((__m256i*)&uw_16);
+    __m256i ymm11 = _mm256_load_si256(reinterpret_cast<const __m256i*>(uw_16));
     // vmovdqa ymm12,YMMWORD ptr[r10]
     __m256i ymm12 = _mm256_load_si256((__m256i*)r10);
     // vmovdqa ymm13,YMMWORD ptr[r10+64]
@@ -2209,13 +2314,13 @@ extern "C" int processLine0_AVX2_ASM_16(
 
     // 定数のロード
     // vmovdqa ymm8,YMMWORD ptr d_19
-    __m256i ymm8 = _mm256_load_si256((__m256i*)&d_19);
+    __m256i ymm8 = _mm256_load_si256(reinterpret_cast<const __m256i*>(d_19));
     // vmovdqa ymm9,YMMWORD ptr d_3
-    __m256i ymm9 = _mm256_load_si256((__m256i*)&d_3);
+    __m256i ymm9 = _mm256_load_si256(reinterpret_cast<const __m256i*>(d_3));
     // vmovdqa xmm10,XMMWORD ptr ub_1
-    __m128i xmm10 = _mm_load_si128((__m128i*)&ub_1);
+    __m128i xmm10 = _mm_load_si128(reinterpret_cast<const __m128i*>(ub_1));
     // vmovdqa ymm11,YMMWORD ptr ud_16
-    __m256i ymm11 = _mm256_load_si256((__m256i*)&ud_16);
+    __m256i ymm11 = _mm256_load_si256(reinterpret_cast<const __m256i*>(ud_16));
     // vmovdqa ymm12,YMMWORD ptr[r10]
     __m256i ymm12 = _mm256_load_si256((__m256i*)r10);
     // vmovdqa ymm13,YMMWORD ptr[r10+64]
@@ -2351,11 +2456,11 @@ extern "C" int processLine0_AVX2_ASM_32(
     // vpxor ymm6,ymm6,ymm6
     __m256i ymm6 = _mm256_setzero_si256();
     // vmovaps ymm7,YMMWORD ptr f_19
-    __m256 ymm7 = _mm256_load_ps((float*)&f_19);
+    __m256 ymm7 = _mm256_load_ps(f_19);
     // vmovaps ymm8,YMMWORD ptr f_3
-    __m256 ymm8 = _mm256_load_ps((float*)&f_3);
+    __m256 ymm8 = _mm256_load_ps(f_3);
     // vmovdqa xmm9,XMMWORD ptr uw_1
-    __m128i xmm9 = _mm_load_si128((__m128i*)&uw_1);
+    __m128i xmm9 = _mm_load_si128(reinterpret_cast<const __m128i*>(uw_1));
 
     // xloop_32
     while (rcx != 0) {
@@ -2448,9 +2553,9 @@ extern "C" void weightedAvgElliottMul5_m16_AVX2(
 
     // 定数のロード
     // vmovdqa ymm6,YMMWORD ptr sign_bits_f_32
-    __m256 ymm6 = _mm256_load_ps((float*)&sign_bits_f_32);
+    __m256 ymm6 = _mm256_castsi256_ps(_mm256_load_si256(reinterpret_cast<const __m256i*>(sign_bits_f_32)));
     // vmovdqa ymm7,YMMWORD ptr ones_f_32
-    __m256 ymm7 = _mm256_load_ps((float*)&ones_f_32);
+    __m256 ymm7 = _mm256_load_ps(ones_f_32);
 
     // ポインタの計算
     const char* rdx = rax + rcx * 4;
@@ -2495,13 +2600,13 @@ extern "C" void weightedAvgElliottMul5_m16_AVX2(
     xmm1 = _mm_hadd_ps(xmm1, xmm1);
 
     // vcomiss xmm0,dword ptr min_weight_sum
-    if (!(_mm_cvtss_f32(xmm0) > _mm_cvtss_f32(_mm_load_ss((float*)&min_weight_sum)))) {
+    if (!(_mm_cvtss_f32(xmm0) > _mm_cvtss_f32(_mm_load_ss(min_weight_sum)))) {
         // nodiv2:
         // vxorps xmm1,xmm1,xmm1
         xmm1 = _mm_setzero_ps();
     } else {
         // vmulss xmm1,xmm1,dword ptr five_f
-        xmm1 = _mm_mul_ss(xmm1, _mm_load_ss((float*)&five_f));
+        xmm1 = _mm_mul_ss(xmm1, _mm_load_ss(five_f));
         // vdivss xmm1,xmm1,xmm0
         xmm1 = _mm_div_ss(xmm1, xmm0);
     }
@@ -2879,7 +2984,7 @@ extern "C" void extract_m8_i16_AVX2_16(
     // アキュムレータ (整数: 32bit x8)
     __m256i ymm4 = _mm256_setzero_si256();    // sum
     __m256i ymm5 = _mm256_setzero_si256();    // sumsq
-    const __m256i ymm8 = uw_1;                // 16bit 全て 1
+    const __m256i ymm8 = _mm256_load_si256(reinterpret_cast<const __m256i*>(uw_1));                // 16bit 全て 1
 
     // ----------------------------------------------------------------------------
     // 幅 8 以下 (<=8 pixel) は 128bit パスを使用
@@ -3035,7 +3140,7 @@ extern "C" void extract_m8_i16_AVX2_16_2(
     __m128i xmm4 = _mm_setzero_si128();    // sum (32bit x4)
     __m256i ymm5 = _mm256_setzero_si256(); // sumsq (64bit x4)
     __m128i xmm6 = _mm_setzero_si128();    // ゼロレジスタ
-    __m128i xmm7 = _mm_load_si128((__m128i*)&uw_1); // 全bit 1のレジスタ
+    __m128i xmm7 = _mm_load_si128(reinterpret_cast<const __m128i*>(uw_1)); // 全bit 1のレジスタ
 
     // アライメントチェック
     bool aligned = ((uintptr_t)rax & 15) == 0;
